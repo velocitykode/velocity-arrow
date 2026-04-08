@@ -103,13 +103,9 @@ func HandleDBQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 }
 
 func isAllowedQuery(query string) bool {
-	// Check for forbidden patterns first
+	// Check for forbidden patterns - always block, even inside WITH
 	for _, pattern := range forbiddenPatterns {
 		if pattern.MatchString(query) {
-			// Allow if it's inside a WITH...SELECT (the forbidden word might be in a subquery name)
-			if allowedQueryPatterns[len(allowedQueryPatterns)-1].MatchString(query) {
-				continue
-			}
 			return false
 		}
 	}

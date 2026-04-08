@@ -41,7 +41,7 @@ func writeMCPConfig(dir string, agent agents.MCPAgent) string {
 	config[configKey] = servers
 
 	// Ensure parent directory exists
-	if parentDir := filepath.Dir(path); parentDir != "." {
+	if parentDir := filepath.Dir(agent.MCPConfigPath()); parentDir != "." {
 		if err := os.MkdirAll(filepath.Join(dir, parentDir), 0755); err != nil {
 			return fmt.Sprintf("FAILED (%v)", err)
 		}
