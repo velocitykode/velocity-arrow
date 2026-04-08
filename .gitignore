@@ -1,0 +1,4 @@
+# Internal docs (synced to ~/vdocs via vdocs-sync, not shipped)
+/docs/*.md
+/docs/packages/
+/docs/implementation/
