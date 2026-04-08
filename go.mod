@@ -6,7 +6,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/mark3labs/mcp-go v0.32.0
 	github.com/spf13/cobra v1.9.1
-	github.com/velocitykode/velocity v0.6.8
+	github.com/velocitykode/velocity v0.20.3
 )
 
 require (
@@ -45,9 +45,4 @@ require (
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-)
-
-replace (
-	github.com/velocitykode/velocity => /Users/ali/code/velocity
-	github.com/velocitykode/velwatch-go => /Users/ali/code/velwatch-go
 )
