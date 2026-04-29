@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/velocitykode/velocity/log"
+	"github.com/velocitykode/velocity"
 )
 
 // HandleLastError returns the last ERROR entry from the Velocity log file.
@@ -38,8 +38,8 @@ func HandleLastError(ctx context.Context, request mcp.CallToolRequest) (*mcp.Cal
 
 // logDir returns the log directory from Velocity's log config.
 func logDir() string {
-	config := log.LogConfigFromEnv()
-	if path, ok := config.Config["path"].(string); ok && path != "" {
+	cfg := velocity.ConfigFromEnv()
+	if path, ok := cfg.Log.Config["path"].(string); ok && path != "" {
 		return path
 	}
 	return "./storage/logs"

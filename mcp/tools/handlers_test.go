@@ -93,7 +93,7 @@ func newTestManager(t *testing.T) *orm.Manager {
 	if err != nil {
 		t.Fatalf("creating test ORM manager: %v", err)
 	}
-	t.Cleanup(func() { manager.Close() })
+	t.Cleanup(func() { manager.Shutdown(context.Background()) })
 	return manager
 }
 
@@ -459,7 +459,7 @@ func TestHandleDBQuery_WithTestManager(t *testing.T) {
 	db.Exec("INSERT INTO users (name) VALUES ('Alice'), ('Bob')")
 
 	// Test via manager.Raw (same as handler would use internally)
-	rows, err := manager.Raw("SELECT * FROM users ORDER BY name")
+	rows, err := manager.Raw(context.Background(), "SELECT * FROM users ORDER BY name")
 	if err != nil {
 		t.Fatalf("raw query error: %v", err)
 	}

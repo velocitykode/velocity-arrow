@@ -61,7 +61,7 @@ func handleAllConfig(config velocity.Config) (*mcp.CallToolResult, error) {
 
 	// Show parsed config summary
 	b.WriteString("## Application\n")
-	b.WriteString(fmt.Sprintf("- Name: %s\n", config.Name))
+	b.WriteString(fmt.Sprintf("- Name: %s\n", os.Getenv("APP_NAME")))
 	b.WriteString(fmt.Sprintf("- Environment: %s\n", config.Env))
 	b.WriteString(fmt.Sprintf("- Debug: %t\n", config.Debug))
 	b.WriteString(fmt.Sprintf("- Port: %s\n", config.Port))
