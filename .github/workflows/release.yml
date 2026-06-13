@@ -25,26 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    env:
-      # velocity-mcp is a private module: skip the public proxy/sumdb for it
-      # and fetch over git with the org token.
-      GOPRIVATE: github.com/velocitykode/velocity-mcp
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
-
-      - name: Configure git for private modules
-        env:
-          TOKEN: ${{ secrets.VELOCITY_TOKEN }}
-        run: |
-          if [ -z "$TOKEN" ]; then
-            echo "::error::VELOCITY_TOKEN is empty/unavailable in this repository's secrets"
-            exit 1
-          fi
-          echo "token present (length ${#TOKEN})"
-          git config --global url."https://x-access-token:${TOKEN}@github.com/velocitykode/".insteadOf "https://github.com/velocitykode/"
 
       - name: Set up Go
         uses: actions/setup-go@v6
