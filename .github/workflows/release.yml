@@ -36,8 +36,15 @@ jobs:
           fetch-depth: 0
 
       - name: Configure git for private modules
+        env:
+          TOKEN: ${{ secrets.VELOCITY_TOKEN }}
         run: |
-          git config --global url."https://x-access-token:${{ secrets.VELOCITY_TOKEN }}@github.com/velocitykode/".insteadOf "https://github.com/velocitykode/"
+          if [ -z "$TOKEN" ]; then
+            echo "::error::VELOCITY_TOKEN is empty/unavailable in this repository's secrets"
+            exit 1
+          fi
+          echo "token present (length ${#TOKEN})"
+          git config --global url."https://x-access-token:${TOKEN}@github.com/velocitykode/".insteadOf "https://github.com/velocitykode/"
 
       - name: Set up Go
         uses: actions/setup-go@v6
