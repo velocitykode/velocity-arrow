@@ -89,8 +89,8 @@ github.com/velocitykode/velocity v0.58.2 h1:LOQJi5GGx1LI9oUZFqDdBSw2OgKjNWD+V2ik
 github.com/velocitykode/velocity v0.58.2/go.mod h1:Wk6xjcTv7tpS2gNudrVenHA+tdc3zGgnm9U0ua1gk1w=
 github.com/velocitykode/velocity-cli v0.13.1 h1:hJHRSocCxr9Meg+1BStKEiUEzLZGUfR1I9+xGv+aE/8=
 github.com/velocitykode/velocity-cli v0.13.1/go.mod h1:tikgnkTnFss7j0/xVEkYt4txhOQkJt2pG21wCDdZSyE=
-github.com/velocitykode/velocity-mcp v0.1.1 h1:4JEqkjnTa7rnUe9ILge2PAiQnK5sI1dmMYXOVzDagyM=
-github.com/velocitykode/velocity-mcp v0.1.1/go.mod h1:6TiQEa0i0oJ7kujufI05e5f4ByIQeypTfZFR2BXGLGk=
+github.com/velocitykode/velocity-mcp v0.2.1 h1:NPhCsFKYFbm646BfiIHOHd3dt4HtJSd3NhV4n717nJA=
+github.com/velocitykode/velocity-mcp v0.2.1/go.mod h1:6TiQEa0i0oJ7kujufI05e5f4ByIQeypTfZFR2BXGLGk=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e h1:JVG44RsyaB9T2KIHavMF/ppJZNG9ZpyihvCd0w101no=
 github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e/go.mod h1:RbqR21r5mrJuqunuUZ/Dhy/avygyECGrLceyNeo4LiM=
 github.com/yuin/gopher-lua v1.1.1 h1:kYKnWBjvbNP4XLT3+bPEwAXJx262OhaHDWDVOPjL46M=
