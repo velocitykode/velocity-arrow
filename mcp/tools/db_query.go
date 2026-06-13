@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 var allowedQueryPatterns = []*regexp.Regexp{
@@ -32,33 +32,33 @@ var forbiddenPatterns = []*regexp.Regexp{
 }
 
 // HandleDBQuery executes a read-only SQL query.
-func HandleDBQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := request.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError("query parameter is required"), nil
+func HandleDBQuery(ctx context.Context, req *server.Request) (*server.Response, error) {
+	query, ok := req.StringOK("query")
+	if !ok {
+		return server.Error("query parameter is required"), nil
 	}
 
-	database := request.GetString("database", "")
+	database := req.String("database")
 
 	if !isAllowedQuery(query) {
-		return mcp.NewToolResultError("Only read-only queries are allowed: SELECT, SHOW, EXPLAIN, DESCRIBE, WITH...SELECT"), nil
+		return server.Error("Only read-only queries are allowed: SELECT, SHOW, EXPLAIN, DESCRIBE, WITH...SELECT"), nil
 	}
 
 	db, _, err := openDB(database)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("database connection failed: %v", err)), nil
+		return server.Error(fmt.Sprintf("database connection failed: %v", err)), nil
 	}
 	defer db.Close()
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("query error: %v", err)), nil
+		return server.Error(fmt.Sprintf("query error: %v", err)), nil
 	}
 	defer rows.Close()
 
 	columns, err := rows.Columns()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("getting columns: %v", err)), nil
+		return server.Error(fmt.Sprintf("getting columns: %v", err)), nil
 	}
 
 	var results []map[string]any
@@ -70,7 +70,7 @@ func HandleDBQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 		}
 
 		if err := rows.Scan(valuePtrs...); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("scanning row: %v", err)), nil
+			return server.Error(fmt.Sprintf("scanning row: %v", err)), nil
 		}
 
 		row := make(map[string]any)
@@ -85,7 +85,7 @@ func HandleDBQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 	}
 
 	if err := rows.Err(); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("reading results: %v", err)), nil
+		return server.Error(fmt.Sprintf("reading results: %v", err)), nil
 	}
 
 	var b strings.Builder
@@ -94,12 +94,12 @@ func HandleDBQuery(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 	if len(results) > 0 {
 		data, err := json.MarshalIndent(results, "", "  ")
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("encoding results: %v", err)), nil
+			return server.Error(fmt.Sprintf("encoding results: %v", err)), nil
 		}
 		b.Write(data)
 	}
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }
 
 func isAllowedQuery(query string) bool {

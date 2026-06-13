@@ -8,32 +8,32 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/velocitykode/velocity"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleLastError returns the last ERROR entry from the Velocity log file.
-func HandleLastError(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func HandleLastError(ctx context.Context, req *server.Request) (*server.Response, error) {
 	logFile, err := findLatestLogFile()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("finding log file: %v", err)), nil
+		return server.Error(fmt.Sprintf("finding log file: %v", err)), nil
 	}
 
 	data, err := os.ReadFile(logFile)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("reading log file: %v", err)), nil
+		return server.Error(fmt.Sprintf("reading log file: %v", err)), nil
 	}
 
 	lastError := findLastError(string(data))
 	if lastError == "" {
-		return mcp.NewToolResultText("No ERROR entries found in the log file."), nil
+		return server.Text("No ERROR entries found in the log file."), nil
 	}
 
 	if len(lastError) > 500 {
 		lastError = lastError[:500] + "...\n(truncated)"
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("# Last Error\n\n```\n%s\n```", lastError)), nil
+	return server.Text(fmt.Sprintf("# Last Error\n\n```\n%s\n```", lastError)), nil
 }
 
 // logDir returns the log directory from Velocity's log config.

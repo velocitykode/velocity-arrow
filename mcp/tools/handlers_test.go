@@ -7,17 +7,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/content"
+	"github.com/velocitykode/velocity-mcp/server"
 	"github.com/velocitykode/velocity/orm"
 	ormtesting "github.com/velocitykode/velocity/orm/testing"
 )
 
-func makeRequest(args map[string]any) mcp.CallToolRequest {
-	return mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Arguments: args,
-		},
-	}
+func makeRequest(args map[string]any) *server.Request {
+	return server.NewRequest(args)
 }
 
 func setupFixtureProject(t *testing.T) string {
@@ -106,11 +103,11 @@ func TestHandleAppInfo(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if result.IsError {
-			t.Fatalf("tool error: %s", result.Content[0].(mcp.TextContent).Text)
+		if result.IsError() {
+			t.Fatalf("tool error: %s", result.Contents()[0].(*content.Text).String())
 		}
 
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "testapp") {
 			t.Error("should contain module name")
 		}
@@ -130,7 +127,7 @@ func TestHandleAppInfo_NoGoMod(t *testing.T) {
 	dir := t.TempDir()
 	withWorkDir(t, dir, func() {
 		result, _ := HandleAppInfo(context.Background(), makeRequest(nil))
-		if !result.IsError {
+		if !result.IsError() {
 			t.Error("expected error for missing go.mod")
 		}
 	})
@@ -147,7 +144,7 @@ func TestHandleConfig_SpecificKey(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "testing") {
 			t.Errorf("expected APP_ENV=testing, got: %s", text)
 		}
@@ -161,7 +158,7 @@ func TestHandleConfig_SecretKey(t *testing.T) {
 		result, _ := HandleConfig(context.Background(), makeRequest(map[string]any{
 			"key": "DB_PASSWORD",
 		}))
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "REDACTED") {
 			t.Error("secret key should be redacted")
 		}
@@ -175,7 +172,7 @@ func TestHandleConfig_AllKeys(t *testing.T) {
 	dir := setupFixtureProject(t)
 	withWorkDir(t, dir, func() {
 		result, _ := HandleConfig(context.Background(), makeRequest(nil))
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "# Configuration") {
 			t.Error("should contain heading")
 		}
@@ -194,7 +191,7 @@ func TestHandleConfig_MissingKey(t *testing.T) {
 		result, _ := HandleConfig(context.Background(), makeRequest(map[string]any{
 			"key": "NONEXISTENT_KEY",
 		}))
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "not found") {
 			t.Errorf("expected 'not found', got: %s", text)
 		}
@@ -207,7 +204,7 @@ func TestHandleConfig_NoEnv(t *testing.T) {
 		result, _ := HandleConfig(context.Background(), makeRequest(map[string]any{
 			"key": "APP_ENV",
 		}))
-		if !result.IsError {
+		if !result.IsError() {
 			t.Error("expected error for missing .env")
 		}
 	})
@@ -222,7 +219,7 @@ func TestHandleRoutes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "GET") {
 			t.Error("should contain GET route")
 		}
@@ -239,7 +236,7 @@ func TestHandleRoutes_EmptyProject(t *testing.T) {
 	dir := t.TempDir()
 	withWorkDir(t, dir, func() {
 		result, _ := HandleRoutes(context.Background(), makeRequest(nil))
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "No routes found") {
 			t.Errorf("expected 'No routes found', got: %s", text)
 		}
@@ -255,7 +252,7 @@ func TestHandleSearchDocs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	text := result.Content[0].(mcp.TextContent).Text
+	text := result.Contents()[0].(*content.Text).String()
 	if !strings.Contains(text, "Documentation Search Results") {
 		t.Error("should contain results heading")
 	}
@@ -263,7 +260,7 @@ func TestHandleSearchDocs(t *testing.T) {
 
 func TestHandleSearchDocs_NoQueries(t *testing.T) {
 	result, _ := HandleSearchDocs(context.Background(), makeRequest(nil))
-	if !result.IsError {
+	if !result.IsError() {
 		t.Error("expected error for missing queries")
 	}
 }
@@ -273,7 +270,7 @@ func TestHandleSearchDocs_WithPackageFilter(t *testing.T) {
 		"queries":  []any{"models queries"},
 		"packages": []any{"orm"},
 	}))
-	text := result.Content[0].(mcp.TextContent).Text
+	text := result.Contents()[0].(*content.Text).String()
 	if strings.Contains(text, "Getting Started") {
 		t.Error("package filter should exclude getting-started")
 	}
@@ -284,7 +281,7 @@ func TestHandleSearchDocs_TokenLimit(t *testing.T) {
 		"queries":     []any{"velocity"},
 		"token_limit": float64(10),
 	}))
-	text := result.Content[0].(mcp.TextContent).Text
+	text := result.Contents()[0].(*content.Text).String()
 	if len(text) > 500 {
 		t.Error("response should be limited by token_limit")
 	}
@@ -299,7 +296,7 @@ func TestHandleLastError(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "Connection refused") {
 			t.Errorf("should find the error entry, got: %s", text)
 		}
@@ -311,7 +308,7 @@ func TestHandleLastError_NoLogs(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "storage", "logs"), 0755)
 	withWorkDir(t, dir, func() {
 		result, _ := HandleLastError(context.Background(), makeRequest(nil))
-		if !result.IsError {
+		if !result.IsError() {
 			t.Error("expected error for no log files")
 		}
 	})
@@ -328,7 +325,7 @@ func TestHandleLogEntries(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "Last 2 Log Entries") {
 			t.Errorf("should show last 2, got: %s", text)
 		}
@@ -339,7 +336,7 @@ func TestHandleLogEntries_Default(t *testing.T) {
 	dir := setupFixtureProject(t)
 	withWorkDir(t, dir, func() {
 		result, _ := HandleLogEntries(context.Background(), makeRequest(nil))
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "Log Entries") {
 			t.Error("should contain log entries")
 		}
@@ -351,7 +348,7 @@ func TestHandleLogEntries_NoLogs(t *testing.T) {
 	os.MkdirAll(filepath.Join(dir, "storage", "logs"), 0755)
 	withWorkDir(t, dir, func() {
 		result, _ := HandleLogEntries(context.Background(), makeRequest(nil))
-		if !result.IsError {
+		if !result.IsError() {
 			t.Error("expected error for no log files")
 		}
 	})
@@ -499,10 +496,10 @@ func TestHandleDBQuery_Forbidden(t *testing.T) {
 		result, _ := HandleDBQuery(context.Background(), makeRequest(map[string]any{
 			"query": q,
 		}))
-		if !result.IsError {
+		if !result.IsError() {
 			t.Errorf("query %q should be blocked", q)
 		}
-		text := result.Content[0].(mcp.TextContent).Text
+		text := result.Contents()[0].(*content.Text).String()
 		if !strings.Contains(text, "read-only") {
 			t.Errorf("error for %q should mention read-only, got: %s", q, text)
 		}
@@ -511,7 +508,7 @@ func TestHandleDBQuery_Forbidden(t *testing.T) {
 
 func TestHandleDBQuery_MissingParam(t *testing.T) {
 	result, _ := HandleDBQuery(context.Background(), makeRequest(nil))
-	if !result.IsError {
+	if !result.IsError() {
 		t.Error("missing query param should error")
 	}
 }

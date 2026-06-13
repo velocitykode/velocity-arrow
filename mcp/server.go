@@ -1,122 +1,111 @@
 package mcp
 
 import (
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"context"
+
 	"github.com/velocitykode/velocity-arrow/mcp/tools"
+	"github.com/velocitykode/velocity-mcp/schema"
+	"github.com/velocitykode/velocity-mcp/server"
+	"github.com/velocitykode/velocity-mcp/transport"
 )
 
 // Serve starts the MCP server on stdio transport.
 func Serve() error {
-	s := server.NewMCPServer(
+	return transport.ServeStdio(context.Background(), newServer())
+}
+
+func newServer() *server.Server {
+	return server.New(
 		"velocity-arrow",
 		"0.1.0",
-		server.WithToolCapabilities(false),
 		server.WithInstructions("Velocity framework MCP server. Provides tools for app introspection, database access, route listing, documentation search, log reading, and configuration inspection."),
-	)
-
-	registerTools(s)
-
-	return server.ServeStdio(s)
-}
-
-func registerTools(s *server.MCPServer) {
-	s.AddTool(appInfoTool(), tools.HandleAppInfo)
-	s.AddTool(dbSchemaTool(), tools.HandleDBSchema)
-	s.AddTool(dbQueryTool(), tools.HandleDBQuery)
-	s.AddTool(routesTool(), tools.HandleRoutes)
-	s.AddTool(searchDocsTool(), tools.HandleSearchDocs)
-	s.AddTool(lastErrorTool(), tools.HandleLastError)
-	s.AddTool(logEntriesTool(), tools.HandleLogEntries)
-	s.AddTool(configTool(), tools.HandleConfig)
-}
-
-func appInfoTool() mcp.Tool {
-	return mcp.NewTool("velocity_app_info",
-		mcp.WithDescription("Get Velocity application info: Go version, Velocity version, dependencies, and registered providers."),
-		mcp.WithReadOnlyHintAnnotation(true),
+		server.WithTools(registeredTools()...),
 	)
 }
 
-func dbSchemaTool() mcp.Tool {
-	return mcp.NewTool("velocity_db_schema",
-		mcp.WithDescription("Explore the database schema. Use summary mode first, then request specific tables."),
-		mcp.WithBoolean("summary",
-			mcp.Description("When true, returns only table names and column types. Default: true."),
-		),
-		mcp.WithString("filter",
-			mcp.Description("Filter tables by name (substring match)."),
-		),
-		mcp.WithString("database",
-			mcp.Description("Database name override. Defaults to DB_DATABASE from .env."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func registeredTools() []server.Tool {
+	return []server.Tool{
+		appInfoTool().HandleFunc(tools.HandleAppInfo),
+		dbSchemaTool().HandleFunc(tools.HandleDBSchema),
+		dbQueryTool().HandleFunc(tools.HandleDBQuery),
+		routesTool().HandleFunc(tools.HandleRoutes),
+		searchDocsTool().HandleFunc(tools.HandleSearchDocs),
+		lastErrorTool().HandleFunc(tools.HandleLastError),
+		logEntriesTool().HandleFunc(tools.HandleLogEntries),
+		configTool().HandleFunc(tools.HandleConfig),
+	}
 }
 
-func dbQueryTool() mcp.Tool {
-	return mcp.NewTool("velocity_db_query",
-		mcp.WithDescription("Run a read-only SQL query against the application database. Only SELECT, SHOW, EXPLAIN, DESCRIBE, and WITH...SELECT are allowed."),
-		mcp.WithString("query",
-			mcp.Required(),
-			mcp.Description("The SQL query to execute."),
-		),
-		mcp.WithString("database",
-			mcp.Description("Database name override. Defaults to DB_DATABASE from .env."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func appInfoTool() *server.ToolBuilder {
+	return server.NewTool("velocity_app_info",
+		"Get Velocity application info: Go version, Velocity version, dependencies, and registered providers.")
 }
 
-func routesTool() mcp.Tool {
-	return mcp.NewTool("velocity_routes",
-		mcp.WithDescription("List registered routes by parsing route registration files. Returns method, path, handler, and middleware."),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func dbSchemaTool() *server.ToolBuilder {
+	return server.NewTool("velocity_db_schema",
+		"Explore the database schema. Use summary mode first, then request specific tables.").
+		WithSchema(func(s *schema.Object) {
+			s.Boolean("summary").
+				Description("When true, returns only table names and column types. Default: true.")
+			s.String("filter").
+				Description("Filter tables by name (substring match).")
+			s.String("database").
+				Description("Database name override. Defaults to DB_DATABASE from .env.")
+		})
 }
 
-func searchDocsTool() mcp.Tool {
-	return mcp.NewTool("velocity_search_docs",
-		mcp.WithDescription("Search the embedded Velocity documentation."),
-		mcp.WithArray("queries",
-			mcp.Required(),
-			mcp.Description("Search queries to run against the docs."),
-			mcp.Items(map[string]any{"type": "string"}),
-		),
-		mcp.WithArray("packages",
-			mcp.Description("Filter by package names (e.g., orm, cache, queue)."),
-			mcp.Items(map[string]any{"type": "string"}),
-		),
-		mcp.WithNumber("token_limit",
-			mcp.Description("Maximum tokens in the response. Default: 3000."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func dbQueryTool() *server.ToolBuilder {
+	return server.NewTool("velocity_db_query",
+		"Run a read-only SQL query against the application database. Only SELECT, SHOW, EXPLAIN, DESCRIBE, and WITH...SELECT are allowed.").
+		WithSchema(func(s *schema.Object) {
+			s.String("query").
+				Required().
+				Description("The SQL query to execute.")
+			s.String("database").
+				Description("Database name override. Defaults to DB_DATABASE from .env.")
+		})
 }
 
-func lastErrorTool() mcp.Tool {
-	return mcp.NewTool("velocity_last_error",
-		mcp.WithDescription("Get the last ERROR entry from the application log file."),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func routesTool() *server.ToolBuilder {
+	return server.NewTool("velocity_routes",
+		"List registered routes by parsing route registration files. Returns method, path, handler, and middleware.")
 }
 
-func logEntriesTool() mcp.Tool {
-	return mcp.NewTool("velocity_log_entries",
-		mcp.WithDescription("Read the last N log entries from the application log file."),
-		mcp.WithNumber("entries",
-			mcp.Description("Number of entries to return. Default: 10."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func searchDocsTool() *server.ToolBuilder {
+	return server.NewTool("velocity_search_docs",
+		"Search the embedded Velocity documentation.").
+		WithSchema(func(s *schema.Object) {
+			s.Array("queries").
+				Required().
+				Description("Search queries to run against the docs.").
+				Items("string")
+			s.Array("packages").
+				Description("Filter by package names (e.g., orm, cache, queue).").
+				Items("string")
+			s.Number("token_limit").
+				Description("Maximum tokens in the response. Default: 3000.")
+		})
 }
 
-func configTool() mcp.Tool {
-	return mcp.NewTool("velocity_config",
-		mcp.WithDescription("Read configuration values from .env and config files."),
-		mcp.WithString("key",
-			mcp.Description("Specific config key to read (e.g., DB_CONNECTION, APP_ENV). Omit to get all non-secret values."),
-		),
-		mcp.WithReadOnlyHintAnnotation(true),
-	)
+func lastErrorTool() *server.ToolBuilder {
+	return server.NewTool("velocity_last_error",
+		"Get the last ERROR entry from the application log file.")
+}
+
+func logEntriesTool() *server.ToolBuilder {
+	return server.NewTool("velocity_log_entries",
+		"Read the last N log entries from the application log file.").
+		WithSchema(func(s *schema.Object) {
+			s.Number("entries").
+				Description("Number of entries to return. Default: 10.")
+		})
+}
+
+func configTool() *server.ToolBuilder {
+	return server.NewTool("velocity_config",
+		"Read configuration values from .env and config files.").
+		WithSchema(func(s *schema.Object) {
+			s.String("key").
+				Description("Specific config key to read (e.g., DB_CONNECTION, APP_ENV). Omit to get all non-secret values.")
+		})
 }

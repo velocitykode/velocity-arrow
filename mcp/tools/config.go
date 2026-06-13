@@ -9,13 +9,13 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/velocitykode/velocity"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleConfig reads configuration values from .env and config files.
-func HandleConfig(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	key := request.GetString("key", "")
+func HandleConfig(ctx context.Context, req *server.Request) (*server.Response, error) {
+	key := req.String("key")
 
 	config := velocity.ConfigFromEnv()
 
@@ -26,34 +26,34 @@ func HandleConfig(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 	return handleAllConfig(config)
 }
 
-func handleSpecificKey(key string, config velocity.Config) (*mcp.CallToolResult, error) {
+func handleSpecificKey(key string, config velocity.Config) (*server.Response, error) {
 	if isSecretKey(key) {
-		return mcp.NewToolResultText(fmt.Sprintf("`%s` = [REDACTED] (secret value)", key)), nil
+		return server.Text(fmt.Sprintf("`%s` = [REDACTED] (secret value)", key)), nil
 	}
 
 	// Read from .env for the raw value
 	dir, _ := os.Getwd()
 	env, err := godotenv.Read(filepath.Join(dir, ".env"))
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("reading .env: %v", err)), nil
+		return server.Error(fmt.Sprintf("reading .env: %v", err)), nil
 	}
 
 	val, ok := env[key]
 	if !ok {
 		val = os.Getenv(key)
 		if val == "" {
-			return mcp.NewToolResultText(fmt.Sprintf("Key `%s` not found in .env or environment.", key)), nil
+			return server.Text(fmt.Sprintf("Key `%s` not found in .env or environment.", key)), nil
 		}
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("`%s` = `%s`", key, val)), nil
+	return server.Text(fmt.Sprintf("`%s` = `%s`", key, val)), nil
 }
 
-func handleAllConfig(config velocity.Config) (*mcp.CallToolResult, error) {
+func handleAllConfig(config velocity.Config) (*server.Response, error) {
 	dir, _ := os.Getwd()
 	env, err := godotenv.Read(filepath.Join(dir, ".env"))
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("reading .env: %v", err)), nil
+		return server.Error(fmt.Sprintf("reading .env: %v", err)), nil
 	}
 
 	var b strings.Builder
@@ -99,5 +99,5 @@ func handleAllConfig(config velocity.Config) (*mcp.CallToolResult, error) {
 		b.WriteString(fmt.Sprintf("- `%s` = `%s`\n", k, v))
 	}
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }

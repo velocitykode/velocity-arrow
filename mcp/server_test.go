@@ -3,14 +3,14 @@ package mcp
 import (
 	"testing"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/velocitykode/velocity-mcp/schema"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 	tests := []struct {
 		name       string
-		tool       mcp.Tool
+		tool       *server.ToolBuilder
 		wantParams []string // expected parameter names
 		required   []string // expected required params
 	}{
@@ -60,20 +60,22 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.tool.Name != tt.name {
-				t.Errorf("tool name = %q, want %q", tt.tool.Name, tt.name)
+			if tt.tool.Name() != tt.name {
+				t.Errorf("tool name = %q, want %q", tt.tool.Name(), tt.name)
 			}
 
-			if tt.tool.Description == "" {
+			if tt.tool.Description() == "" {
 				t.Error("tool description is empty")
 			}
 
 			// Verify parameters exist in schema
-			schema := tt.tool.InputSchema
-			props := schema.Properties
+			obj := schema.NewObject()
+			tt.tool.Schema(obj)
+			schemaMap := obj.ToMap()
+			props, _ := schemaMap["properties"].(map[string]any)
 
 			for _, param := range tt.wantParams {
-				if props == nil {
+				if len(props) == 0 {
 					t.Errorf("expected param %q but schema has no properties", param)
 					continue
 				}
@@ -84,7 +86,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 
 			// Verify required fields
 			if len(tt.required) > 0 {
-				requiredList := schema.Required
+				requiredList, _ := schemaMap["required"].([]string)
 				for _, req := range tt.required {
 					found := false
 					for _, r := range requiredList {
@@ -103,10 +105,9 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 }
 
 func TestRegisterTools_AllEightRegistered(t *testing.T) {
-	s := server.NewMCPServer("test", "0.0.1", server.WithToolCapabilities(false))
-	registerTools(s)
+	s := newServer()
 
-	// Call tools/list to verify all 8 are registered
+	// Verify all 8 tools are registered
 	expectedNames := []string{
 		"velocity_app_info",
 		"velocity_db_schema",
@@ -118,7 +119,13 @@ func TestRegisterTools_AllEightRegistered(t *testing.T) {
 		"velocity_config",
 	}
 
-	if len(expectedNames) != 8 {
-		t.Fatal("expected 8 tools")
+	registered := s.Tools()
+	if len(registered) != len(expectedNames) {
+		t.Fatalf("registered tools = %d, want %d", len(registered), len(expectedNames))
+	}
+	for i, name := range expectedNames {
+		if registered[i].Name() != name {
+			t.Errorf("tools[%d] = %q, want %q", i, registered[i].Name(), name)
+		}
 	}
 }

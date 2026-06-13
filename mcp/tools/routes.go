@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 type routeEntry struct {
@@ -22,22 +22,22 @@ type routeEntry struct {
 }
 
 // HandleRoutes lists registered routes. Prefers `vel routes` CLI, falls back to AST parsing.
-func HandleRoutes(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func HandleRoutes(ctx context.Context, req *server.Request) (*server.Response, error) {
 	// Try vel CLI first
 	if output, err := tryVelRoutes(); err == nil {
-		return mcp.NewToolResultText(fmt.Sprintf("# Routes\n\n%s", output)), nil
+		return server.Text(fmt.Sprintf("# Routes\n\n%s", output)), nil
 	}
 
 	// Fall back to AST parsing
 	dir, err := os.Getwd()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("getting working directory: %v", err)), nil
+		return server.Error(fmt.Sprintf("getting working directory: %v", err)), nil
 	}
 
 	routes := scanRoutes(dir)
 
 	if len(routes) == 0 {
-		return mcp.NewToolResultText("No routes found. Install `vel` CLI for accurate route listing."), nil
+		return server.Text("No routes found. Install `vel` CLI for accurate route listing."), nil
 	}
 
 	var b strings.Builder
@@ -50,7 +50,7 @@ func HandleRoutes(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallTo
 	}
 
 	b.WriteString(fmt.Sprintf("\nTotal: %d routes\n", len(routes)))
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }
 
 // tryVelRoutes shells out to `vel routes` if the CLI is installed.

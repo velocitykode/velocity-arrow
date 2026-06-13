@@ -7,19 +7,22 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/velocitykode/velocity-arrow/docs"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleSearchDocs searches embedded Velocity documentation using TF-IDF.
-func HandleSearchDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	queries := request.GetStringSlice("queries", nil)
+func HandleSearchDocs(ctx context.Context, req *server.Request) (*server.Response, error) {
+	queries := stringSliceArg(req, "queries")
 	if len(queries) == 0 {
-		return mcp.NewToolResultError("queries parameter is required"), nil
+		return server.Error("queries parameter is required"), nil
 	}
 
-	packages := request.GetStringSlice("packages", nil)
-	tokenLimit := request.GetInt("token_limit", 3000)
+	packages := stringSliceArg(req, "packages")
+	tokenLimit := 3000
+	if v, ok := req.IntOK("token_limit"); ok {
+		tokenLimit = int(v)
+	}
 	if tokenLimit <= 0 {
 		tokenLimit = 3000
 	}
@@ -27,7 +30,7 @@ func HandleSearchDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 	results := searchDocs(queries, packages, tokenLimit)
 
 	if len(results) == 0 {
-		return mcp.NewToolResultText("No documentation found matching your queries."), nil
+		return server.Text("No documentation found matching your queries."), nil
 	}
 
 	var b strings.Builder
@@ -44,7 +47,25 @@ func HandleSearchDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 		totalTokens += entryTokens
 	}
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
+}
+
+// stringSliceArg returns the named argument as a []string: a []string passes
+// through, a []any keeps only its string elements, anything else yields nil.
+func stringSliceArg(req *server.Request, key string) []string {
+	switch v := req.Get(key).(type) {
+	case []string:
+		return v
+	case []any:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if str, ok := item.(string); ok {
+				result = append(result, str)
+			}
+		}
+		return result
+	}
+	return nil
 }
 
 type searchResult struct {

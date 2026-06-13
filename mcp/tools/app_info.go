@@ -10,19 +10,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleAppInfo returns Velocity application info by parsing go.mod and provider files.
-func HandleAppInfo(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func HandleAppInfo(ctx context.Context, req *server.Request) (*server.Response, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("getting working directory: %v", err)), nil
+		return server.Error(fmt.Sprintf("getting working directory: %v", err)), nil
 	}
 
 	goMod, err := parseGoMod(dir)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("parsing go.mod: %v", err)), nil
+		return server.Error(fmt.Sprintf("parsing go.mod: %v", err)), nil
 	}
 
 	providers := scanProviders(dir)
@@ -57,7 +57,7 @@ func HandleAppInfo(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 		}
 	}
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }
 
 type goModInfo struct {

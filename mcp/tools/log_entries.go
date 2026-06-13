@@ -6,12 +6,15 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleLogEntries returns the last N log entries from the Velocity log file.
-func HandleLogEntries(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	entries := request.GetInt("entries", 10)
+func HandleLogEntries(ctx context.Context, req *server.Request) (*server.Response, error) {
+	entries := 10
+	if v, ok := req.IntOK("entries"); ok {
+		entries = int(v)
+	}
 	if entries <= 0 {
 		entries = 10
 	}
@@ -21,12 +24,12 @@ func HandleLogEntries(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 
 	logFile, err := findLatestLogFile()
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("finding log file: %v", err)), nil
+		return server.Error(fmt.Sprintf("finding log file: %v", err)), nil
 	}
 
 	data, err := os.ReadFile(logFile)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("reading log file: %v", err)), nil
+		return server.Error(fmt.Sprintf("reading log file: %v", err)), nil
 	}
 
 	logEntries := parseLogEntries(string(data))
@@ -36,7 +39,7 @@ func HandleLogEntries(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 	}
 
 	if len(logEntries) == 0 {
-		return mcp.NewToolResultText("No log entries found."), nil
+		return server.Text("No log entries found."), nil
 	}
 
 	var b strings.Builder
@@ -48,7 +51,7 @@ func HandleLogEntries(ctx context.Context, request mcp.CallToolRequest) (*mcp.Ca
 	}
 	b.WriteString("```\n")
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }
 
 func parseLogEntries(content string) []string {

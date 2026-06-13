@@ -6,28 +6,31 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/velocitykode/velocity-mcp/server"
 )
 
 // HandleDBSchema explores the database schema.
-func HandleDBSchema(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	summary := request.GetBool("summary", true)
-	filter := request.GetString("filter", "")
-	database := request.GetString("database", "")
+func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response, error) {
+	summary := true
+	if v, ok := req.BoolOK("summary"); ok {
+		summary = v
+	}
+	filter := req.String("filter")
+	database := req.String("database")
 
 	db, driver, err := openDB(database)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("database connection failed: %v", err)), nil
+		return server.Error(fmt.Sprintf("database connection failed: %v", err)), nil
 	}
 	defer db.Close()
 
 	tables, err := listTables(db, driver, filter)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("listing tables: %v", err)), nil
+		return server.Error(fmt.Sprintf("listing tables: %v", err)), nil
 	}
 
 	if len(tables) == 0 {
-		return mcp.NewToolResultText("No tables found."), nil
+		return server.Text("No tables found."), nil
 	}
 
 	var b strings.Builder
@@ -57,7 +60,7 @@ func HandleDBSchema(ctx context.Context, request mcp.CallToolRequest) (*mcp.Call
 		b.WriteString("\n")
 	}
 
-	return mcp.NewToolResultText(b.String()), nil
+	return server.Text(b.String()), nil
 }
 
 type columnInfo struct {
