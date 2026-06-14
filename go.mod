@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.9.1
-	github.com/velocitykode/velocity v0.62.1
+	github.com/velocitykode/velocity v0.62.3
 	github.com/velocitykode/velocity-mcp v0.9.0
 )
 
@@ -44,7 +44,7 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/spf13/pflag v1.0.6 // indirect
-	github.com/velocitykode/velocity-cli v0.13.1 // indirect
+	github.com/velocitykode/prism v0.16.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/crypto v0.46.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
