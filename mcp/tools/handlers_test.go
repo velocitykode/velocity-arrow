@@ -366,84 +366,48 @@ func TestHandleDBSchema_SQLite(t *testing.T) {
 	db.Exec("CREATE TABLE posts (id INTEGER PRIMARY KEY, title TEXT, user_id INTEGER)")
 	db.Exec("INSERT INTO users (name, email) VALUES ('Alice', 'alice@test.com')")
 
-	// Point .env at the same in-memory DB won't work across connections.
-	// Instead, test the lower-level functions directly with the live *sql.DB.
+	ctx := context.Background()
 
-	// Test listTables
-	tables, err := listTables(db, "sqlite", "")
+	// ListTables via the ORM schema-introspection API (the dialect SQL lives
+	// in the ORM grammars; the tool writes none).
+	tables, err := manager.ListTables(ctx)
 	if err != nil {
-		t.Fatalf("listTables error: %v", err)
+		t.Fatalf("ListTables error: %v", err)
 	}
-	if len(tables) < 2 {
-		t.Errorf("expected at least 2 tables, got %d: %v", len(tables), tables)
-	}
-	hasUsers := false
-	hasPosts := false
+	hasUsers, hasPosts := false, false
 	for _, table := range tables {
-		if table == "users" {
+		switch table {
+		case "users":
 			hasUsers = true
-		}
-		if table == "posts" {
+		case "posts":
 			hasPosts = true
 		}
 	}
-	if !hasUsers {
-		t.Error("should have users table")
-	}
-	if !hasPosts {
-		t.Error("should have posts table")
+	if !hasUsers || !hasPosts {
+		t.Errorf("expected users and posts tables, got %v", tables)
 	}
 
-	// Test listTables with filter
-	filtered, _ := listTables(db, "sqlite", "user")
-	if len(filtered) != 1 || filtered[0] != "users" {
-		t.Errorf("filter=user should return [users], got %v", filtered)
+	// filterTables is the only schema logic the tool still owns.
+	if got := filterTables(tables, "user"); len(got) != 1 || got[0] != "users" {
+		t.Errorf("filter=user should return [users], got %v", got)
+	}
+	if got := filterTables(tables, "zzz_nonexistent"); len(got) != 0 {
+		t.Errorf("filter=nonexistent should return empty, got %v", got)
 	}
 
-	noMatch, _ := listTables(db, "sqlite", "zzz_nonexistent")
-	if len(noMatch) != 0 {
-		t.Errorf("filter=nonexistent should return empty, got %v", noMatch)
-	}
-
-	// Test describeSqlite summary
-	cols, err := describeSqlite(db, "users", true)
+	// DescribeTable via the ORM introspection API.
+	cols, err := manager.DescribeTable(ctx, "users")
 	if err != nil {
-		t.Fatalf("describeSqlite error: %v", err)
+		t.Fatalf("DescribeTable error: %v", err)
 	}
 	if len(cols) != 3 {
 		t.Errorf("users should have 3 columns, got %d", len(cols))
 	}
-	if cols[0].name != "id" {
-		t.Errorf("first column should be id, got %s", cols[0].name)
+	if cols[0].Name != "id" {
+		t.Errorf("first column should be id, got %s", cols[0].Name)
 	}
-	if cols[0].key != "PRI" {
-		t.Errorf("id should be primary key, got key=%s", cols[0].key)
-	}
-
-	// Test describeSqlite detailed
-	detailedCols, _ := describeSqlite(db, "users", false)
-	if len(detailedCols) != 3 {
-		t.Errorf("detailed should also have 3 columns, got %d", len(detailedCols))
-	}
-
-	// Test describeTable dispatch
-	dispatchCols, err := describeTable(db, "sqlite", "users", true)
-	if err != nil {
-		t.Fatalf("describeTable dispatch error: %v", err)
-	}
-	if len(dispatchCols) != 3 {
-		t.Error("describeTable should dispatch to describeSqlite")
-	}
-
-	// Test unsupported driver
-	_, err = describeTable(db, "oracle", "users", true)
-	if err == nil {
-		t.Error("expected error for unsupported driver")
-	}
-
-	_, err = listTables(db, "oracle", "")
-	if err == nil {
-		t.Error("expected error for unsupported driver in listTables")
+	if !cols[0].PrimaryKey {
+		t.Error("id should be primary key")
 	}
 }
 

@@ -9,8 +9,9 @@ import (
 	"github.com/velocitykode/velocity/orm"
 )
 
-// openDB opens a database connection using Velocity's config and ORM manager.
-func openDB(databaseOverride string) (*sql.DB, string, error) {
+// openManager builds a Velocity ORM manager from the project's .env config,
+// honoring an optional database override.
+func openManager(databaseOverride string) (*orm.Manager, error) {
 	config := velocity.ConfigFromEnv()
 
 	managerConfig := orm.ManagerConfig{
@@ -33,9 +34,18 @@ func openDB(databaseOverride string) (*sql.DB, string, error) {
 
 	manager, err := orm.NewManager(managerConfig)
 	if err != nil {
-		return nil, "", fmt.Errorf("creating ORM manager: %w", err)
+		return nil, fmt.Errorf("creating ORM manager: %w", err)
 	}
+	return manager, nil
+}
 
+// openDB opens a raw database connection using Velocity's config and ORM
+// manager (used by db_query for arbitrary SQL).
+func openDB(databaseOverride string) (*sql.DB, string, error) {
+	manager, err := openManager(databaseOverride)
+	if err != nil {
+		return nil, "", err
+	}
 	return manager.DB(), manager.DriverName(), nil
 }
 

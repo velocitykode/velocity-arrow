@@ -2,14 +2,16 @@ package tools
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 
 	"github.com/velocitykode/velocity-mcp/server"
 )
 
-// HandleDBSchema explores the database schema.
+// HandleDBSchema explores the database schema using Velocity's ORM schema
+// introspection API, which compiles the dialect-specific SQL in the ORM
+// grammars. The tool itself writes no dialect SQL, so it works identically
+// across postgres, mysql, and sqlite.
 func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response, error) {
 	summary := true
 	if v, ok := req.BoolOK("summary"); ok {
@@ -18,17 +20,18 @@ func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response,
 	filter := req.String("filter")
 	database := req.String("database")
 
-	db, driver, err := openDB(database)
+	manager, err := openManager(database)
 	if err != nil {
 		return server.Error(fmt.Sprintf("database connection failed: %v", err)), nil
 	}
-	defer db.Close()
+	defer manager.DB().Close()
 
-	tables, err := listTables(db, driver, filter)
+	tables, err := manager.ListTables(ctx)
 	if err != nil {
 		return server.Error(fmt.Sprintf("listing tables: %v", err)), nil
 	}
 
+	tables = filterTables(tables, filter)
 	if len(tables) == 0 {
 		return server.Text("No tables found."), nil
 	}
@@ -39,7 +42,7 @@ func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response,
 	for _, table := range tables {
 		b.WriteString(fmt.Sprintf("## %s\n", table))
 
-		cols, err := describeTable(db, driver, table, summary)
+		cols, err := manager.DescribeTable(ctx, table)
 		if err != nil {
 			b.WriteString(fmt.Sprintf("  Error: %v\n\n", err))
 			continue
@@ -47,14 +50,14 @@ func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response,
 
 		if summary {
 			for _, col := range cols {
-				b.WriteString(fmt.Sprintf("- %s %s\n", col.name, col.dataType))
+				b.WriteString(fmt.Sprintf("- %s %s\n", col.Name, col.DataType))
 			}
 		} else {
 			b.WriteString("| Column | Type | Nullable | Default | Key |\n")
 			b.WriteString("|--------|------|----------|---------|-----|\n")
 			for _, col := range cols {
 				b.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
-					col.name, col.dataType, col.nullable, col.defaultVal, col.key))
+					col.Name, col.DataType, yesNo(col.Nullable), defaultOf(col.Default), keyOf(col.PrimaryKey)))
 			}
 		}
 		b.WriteString("\n")
@@ -63,156 +66,39 @@ func HandleDBSchema(ctx context.Context, req *server.Request) (*server.Response,
 	return server.Text(b.String()), nil
 }
 
-type columnInfo struct {
-	name       string
-	dataType   string
-	nullable   string
-	defaultVal string
-	key        string
+// filterTables keeps tables whose name contains filter (case-insensitive). An
+// empty filter keeps all.
+func filterTables(tables []string, filter string) []string {
+	if filter == "" {
+		return tables
+	}
+	needle := strings.ToLower(filter)
+	out := tables[:0]
+	for _, t := range tables {
+		if strings.Contains(strings.ToLower(t), needle) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
-func listTables(db *sql.DB, driver, filter string) ([]string, error) {
-	var query string
-	switch driver {
-	case "mysql":
-		query = "SHOW TABLES"
-	case "postgres":
-		query = "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename"
-	case "sqlite", "sqlite3":
-		query = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
-	default:
-		return nil, fmt.Errorf("unsupported driver: %s", driver)
+func yesNo(nullable bool) string {
+	if nullable {
+		return "YES"
 	}
-
-	rows, err := db.Query(query)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		if filter == "" || strings.Contains(strings.ToLower(name), strings.ToLower(filter)) {
-			tables = append(tables, name)
-		}
-	}
-	return tables, rows.Err()
+	return "NO"
 }
 
-func describeTable(db *sql.DB, driver, table string, summary bool) ([]columnInfo, error) {
-	switch driver {
-	case "mysql":
-		return describeMysql(db, table, summary)
-	case "postgres":
-		return describePostgres(db, table, summary)
-	case "sqlite", "sqlite3":
-		return describeSqlite(db, table, summary)
-	default:
-		return nil, fmt.Errorf("unsupported driver: %s", driver)
+func defaultOf(def *string) string {
+	if def == nil {
+		return ""
 	}
+	return *def
 }
 
-func describeMysql(db *sql.DB, table string, summary bool) ([]columnInfo, error) {
-	rows, err := db.Query("DESCRIBE `" + table + "`")
-	if err != nil {
-		return nil, err
+func keyOf(primaryKey bool) string {
+	if primaryKey {
+		return "PRI"
 	}
-	defer rows.Close()
-
-	var cols []columnInfo
-	for rows.Next() {
-		var field, colType, null, key string
-		var def, extra sql.NullString
-		if err := rows.Scan(&field, &colType, &null, &key, &def, &extra); err != nil {
-			return nil, err
-		}
-		col := columnInfo{
-			name:     field,
-			dataType: colType,
-			nullable: null,
-			key:      key,
-		}
-		if def.Valid {
-			col.defaultVal = def.String
-		}
-		cols = append(cols, col)
-	}
-	return cols, rows.Err()
-}
-
-func describePostgres(db *sql.DB, table string, summary bool) ([]columnInfo, error) {
-	query := `SELECT column_name, data_type, is_nullable, column_default,
-		CASE WHEN pk.column_name IS NOT NULL THEN 'PRI' ELSE '' END as key_type
-		FROM information_schema.columns c
-		LEFT JOIN (
-			SELECT kcu.column_name
-			FROM information_schema.table_constraints tc
-			JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-			WHERE tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'
-		) pk ON c.column_name = pk.column_name
-		WHERE c.table_name = $1 AND c.table_schema = 'public'
-		ORDER BY c.ordinal_position`
-
-	rows, err := db.Query(query, table)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cols []columnInfo
-	for rows.Next() {
-		var col columnInfo
-		var def sql.NullString
-		if err := rows.Scan(&col.name, &col.dataType, &col.nullable, &def, &col.key); err != nil {
-			return nil, err
-		}
-		if def.Valid {
-			col.defaultVal = def.String
-		}
-		cols = append(cols, col)
-	}
-	return cols, rows.Err()
-}
-
-func describeSqlite(db *sql.DB, table string, summary bool) ([]columnInfo, error) {
-	rows, err := db.Query("PRAGMA table_info(`" + table + "`)")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var cols []columnInfo
-	for rows.Next() {
-		var cid int
-		var name, colType string
-		var notNull int
-		var defVal sql.NullString
-		var pk int
-		if err := rows.Scan(&cid, &name, &colType, &notNull, &defVal, &pk); err != nil {
-			return nil, err
-		}
-		nullable := "YES"
-		if notNull == 1 {
-			nullable = "NO"
-		}
-		key := ""
-		if pk > 0 {
-			key = "PRI"
-		}
-		col := columnInfo{
-			name:     name,
-			dataType: colType,
-			nullable: nullable,
-			key:      key,
-		}
-		if defVal.Valid {
-			col.defaultVal = defVal.String
-		}
-		cols = append(cols, col)
-	}
-	return cols, rows.Err()
+	return ""
 }

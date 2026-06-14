@@ -5,6 +5,12 @@ import (
 
 	"github.com/spf13/cobra"
 	mcpserver "github.com/velocitykode/velocity-arrow/mcp"
+
+	// Register all ORM drivers (postgres, mysql, sqlite) so db_query/db_schema
+	// work against any project, not just sqlite. Without this only sqlite is
+	// registered and querying a postgres/mysql project fails with
+	// `driver "postgres" not registered`.
+	_ "github.com/velocitykode/velocity/orm/standard"
 )
 
 func main() {
