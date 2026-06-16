@@ -26,7 +26,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 		},
 		{
 			name:       "velocity_db_query",
-			tool:       dbQueryTool(),
+			tool:       dbQueryTool(false),
 			wantParams: []string{"query", "database"},
 			required:   []string{"query"},
 		},
@@ -105,7 +105,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 }
 
 func TestRegisterTools_AllEightRegistered(t *testing.T) {
-	s := newServer()
+	s := newServer(false)
 
 	// Verify all 8 tools are registered
 	expectedNames := []string{

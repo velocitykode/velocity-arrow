@@ -457,7 +457,7 @@ func TestHandleDBQuery_Forbidden(t *testing.T) {
 	}
 
 	for _, q := range forbidden {
-		result, _ := HandleDBQuery(context.Background(), makeRequest(map[string]any{
+		result, _ := NewDBQueryHandler(false)(context.Background(), makeRequest(map[string]any{
 			"query": q,
 		}))
 		if !result.IsError() {
@@ -470,8 +470,33 @@ func TestHandleDBQuery_Forbidden(t *testing.T) {
 	}
 }
 
+func TestHandleDBQuery_WritesAllowed_BypassesReadOnlyGate(t *testing.T) {
+	// With writes enabled the read-only gate must NOT fire. The statement may
+	// still fail on connection (no DB configured in this temp dir), but it must
+	// never be rejected with the "read-only" message.
+	dir := t.TempDir()
+	withWorkDir(t, dir, func() {
+		writes := []string{
+			"INSERT INTO users (name) VALUES ('Eve')",
+			"UPDATE users SET name = 'x'",
+			"DELETE FROM users WHERE id = 1",
+		}
+		for _, q := range writes {
+			result, _ := NewDBQueryHandler(true)(context.Background(), makeRequest(map[string]any{
+				"query": q,
+			}))
+			if result.IsError() {
+				text := result.Contents()[0].(*content.Text).String()
+				if strings.Contains(text, "read-only") {
+					t.Errorf("writes enabled: %q must not hit the read-only gate, got: %s", q, text)
+				}
+			}
+		}
+	})
+}
+
 func TestHandleDBQuery_MissingParam(t *testing.T) {
-	result, _ := HandleDBQuery(context.Background(), makeRequest(nil))
+	result, _ := NewDBQueryHandler(false)(context.Background(), makeRequest(nil))
 	if !result.IsError() {
 		t.Error("missing query param should error")
 	}
@@ -495,7 +520,7 @@ func TestHandleDBSchema_DefaultConfig(t *testing.T) {
 func TestHandleDBQuery_DefaultConfig(t *testing.T) {
 	dir := t.TempDir()
 	withWorkDir(t, dir, func() {
-		result, _ := HandleDBQuery(context.Background(), makeRequest(map[string]any{
+		result, _ := NewDBQueryHandler(false)(context.Background(), makeRequest(map[string]any{
 			"query": "SELECT 1",
 		}))
 		// Should get a result (success or error) - not panic
