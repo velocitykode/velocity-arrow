@@ -120,3 +120,35 @@ func api(r router.Router) {
 		t.Errorf("routes count = %d, want 3", len(routes))
 	}
 }
+
+func TestScanRoutes_NestedDirs(t *testing.T) {
+	dir := t.TempDir()
+
+	webDir := filepath.Join(dir, "routes", "web")
+	infraDir := filepath.Join(dir, "routes", "infra")
+	os.MkdirAll(webDir, 0755)
+	os.MkdirAll(infraDir, 0755)
+
+	web := `package web
+func Register(r router.Router) {
+	r.Get("/projects", h.Index)
+	r.Post("/projects", h.Store)
+}
+`
+	infra := `package infra
+func Register(r router.Router) {
+	r.Get("/healthz", healthz)
+}
+`
+	webTest := `package web
+func TestNothing(t *testing.T) {}
+`
+	os.WriteFile(filepath.Join(webDir, "projects.go"), []byte(web), 0644)
+	os.WriteFile(filepath.Join(infraDir, "health.go"), []byte(infra), 0644)
+	os.WriteFile(filepath.Join(webDir, "projects_test.go"), []byte(webTest), 0644)
+
+	routes := scanRoutes(dir)
+	if len(routes) != 3 {
+		t.Errorf("routes count = %d, want 3 (nested dirs walked, _test.go skipped)", len(routes))
+	}
+}
