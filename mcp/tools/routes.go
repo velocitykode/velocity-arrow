@@ -6,6 +6,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,14 +75,24 @@ func tryVelRoutes() (string, error) {
 func scanRoutes(dir string) []routeEntry {
 	var routes []routeEntry
 
+	// routes/ may nest arbitrarily (routes/web, routes/infra, ...), so walk it.
+	var files []string
+	_ = filepath.WalkDir(filepath.Join(dir, "routes"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			files = append(files, path)
+		}
+		return nil
+	})
+
 	patterns := []string{
-		filepath.Join(dir, "routes", "*.go"),
 		filepath.Join(dir, "app", "routes.go"),
 		filepath.Join(dir, "app", "routes", "*.go"),
 		filepath.Join(dir, "main.go"),
 	}
 
-	var files []string
 	for _, pattern := range patterns {
 		matches, _ := filepath.Glob(pattern)
 		files = append(files, matches...)

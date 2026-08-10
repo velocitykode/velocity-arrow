@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -31,25 +32,47 @@ var forbiddenPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bREVOKE\b`),
 }
 
-// HandleDBQuery executes a read-only SQL query.
-func HandleDBQuery(ctx context.Context, req *server.Request) (*server.Response, error) {
-	query, ok := req.StringOK("query")
-	if !ok {
-		return server.Error("query parameter is required"), nil
+// returningPattern matches a writing statement that still yields rows
+// (e.g. Postgres INSERT/UPDATE/DELETE ... RETURNING), so it is routed
+// through QueryContext rather than ExecContext.
+var returningPattern = regexp.MustCompile(`(?i)\bRETURNING\b`)
+
+// NewDBQueryHandler builds the velocity_db_query handler. When allowWrites
+// is false (the default) the handler enforces read-only access via the
+// allow/forbid regex gate. When true the gate is bypassed entirely and any
+// SQL is executed - SELECT-shaped statements stream rows back, everything
+// else runs through ExecContext and reports the affected-row count.
+func NewDBQueryHandler(allowWrites bool) func(context.Context, *server.Request) (*server.Response, error) {
+	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
+		query, ok := req.StringOK("query")
+		if !ok {
+			return server.Error("query parameter is required"), nil
+		}
+
+		database := req.String("database")
+
+		if !allowWrites && !isAllowedQuery(query) {
+			return server.Error("Only read-only queries are allowed: SELECT, SHOW, EXPLAIN, DESCRIBE, WITH...SELECT. Start arrow with --allow-writes (or ARROW_ALLOW_WRITES=1) to enable writes."), nil
+		}
+
+		db, _, err := openDB(database)
+		if err != nil {
+			return server.Error(fmt.Sprintf("database connection failed: %v", err)), nil
+		}
+		defer db.Close()
+
+		// Route SELECT-shaped statements (and writes with RETURNING) through
+		// QueryContext so rows stream back; route every other write through
+		// ExecContext so a driver that refuses rows on a bare INSERT/UPDATE
+		// does not error.
+		if returnsRows(query) {
+			return runRowQuery(ctx, db, query)
+		}
+		return runExec(ctx, db, query)
 	}
+}
 
-	database := req.String("database")
-
-	if !isAllowedQuery(query) {
-		return server.Error("Only read-only queries are allowed: SELECT, SHOW, EXPLAIN, DESCRIBE, WITH...SELECT"), nil
-	}
-
-	db, _, err := openDB(database)
-	if err != nil {
-		return server.Error(fmt.Sprintf("database connection failed: %v", err)), nil
-	}
-	defer db.Close()
-
+func runRowQuery(ctx context.Context, db *sql.DB, query string) (*server.Response, error) {
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return server.Error(fmt.Sprintf("query error: %v", err)), nil
@@ -100,6 +123,33 @@ func HandleDBQuery(ctx context.Context, req *server.Request) (*server.Response, 
 	}
 
 	return server.Text(b.String()), nil
+}
+
+func runExec(ctx context.Context, db *sql.DB, query string) (*server.Response, error) {
+	res, err := db.ExecContext(ctx, query)
+	if err != nil {
+		return server.Error(fmt.Sprintf("exec error: %v", err)), nil
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return server.Text("Statement executed (rows affected unavailable for this driver)."), nil
+	}
+	return server.Text(fmt.Sprintf("Statement executed. %d rows affected.", affected)), nil
+}
+
+// returnsRows reports whether a statement should be run through QueryContext
+// (it yields a result set): any read-only statement, or a write with a
+// RETURNING clause.
+func returnsRows(query string) bool {
+	if returningPattern.MatchString(query) {
+		return true
+	}
+	for _, pattern := range allowedQueryPatterns {
+		if pattern.MatchString(query) {
+			return true
+		}
+	}
+	return false
 }
 
 func isAllowedQuery(query string) bool {
