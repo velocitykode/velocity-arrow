@@ -35,49 +35,49 @@ func TestKBHandlers(t *testing.T) {
 		wantContains []string
 	}{
 		{
-			name:         "kb-search finds the hashing surface",
+			name:         "velocity_kb_search finds the hashing surface",
 			handler:      NewKBSearchHandler(s),
 			args:         map[string]any{"query": "hash a password"},
 			wantContains: []string{"[symbol]", "Hasher", "auth"},
 		},
 		{
-			name:         "kb-search honors the kind filter",
+			name:         "velocity_kb_search honors the kind filter",
 			handler:      NewKBSearchHandler(s),
 			args:         map[string]any{"query": "password", "kind": string(kb.KindSymbol), "limit": 3},
 			wantContains: []string{"[symbol]"},
 		},
 		{
-			name:         "kb-search miss stays explicit about the boundary",
+			name:         "velocity_kb_search miss stays explicit about the boundary",
 			handler:      NewKBSearchHandler(s),
 			args:         map[string]any{"query": "zzqqxx-not-a-framework-thing"},
 			wantContains: []string{"Absence here does NOT mean"},
 		},
 		{
-			name:         "kb-symbol returns the exact signature",
+			name:         "velocity_kb_symbol returns the exact signature",
 			handler:      NewKBSymbolHandler(s),
 			args:         map[string]any{"name": "Hasher"},
 			wantContains: []string{"type Hasher interface", "ref: auth/hasher.go"},
 		},
 		{
-			name:         "kb-symbol miss stays explicit about the boundary",
+			name:         "velocity_kb_symbol miss stays explicit about the boundary",
 			handler:      NewKBSymbolHandler(s),
 			args:         map[string]any{"name": "NoSuchSymbolInVelocity"},
 			wantContains: []string{"No such symbol in the knowledge base"},
 		},
 		{
-			name:         "kb-guard returns curated rules for a topic",
+			name:         "velocity_kb_guard returns curated rules for a topic",
 			handler:      NewKBGuardHandler(s),
 			args:         map[string]any{"topic": "logging"},
 			wantContains: []string{"[rule]", "STDOUT"},
 		},
 		{
-			name:         "kb-guard with no topic returns the highest-signal guards",
+			name:         "velocity_kb_guard with no topic returns the highest-signal guards",
 			handler:      NewKBGuardHandler(s),
 			args:         map[string]any{},
 			wantContains: []string{"[rule]"},
 		},
 		{
-			name:         "kb-guard unknown topic reports no guards",
+			name:         "velocity_kb_guard unknown topic reports no guards",
 			handler:      NewKBGuardHandler(s),
 			args:         map[string]any{"topic": "zzqqxx"},
 			wantContains: []string{"No guards recorded"},

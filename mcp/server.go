@@ -18,8 +18,8 @@ import (
 // and what a knowledge-base miss does (and does not) mean.
 const instructions = "Velocity framework MCP server. Provides tools for app introspection, database " +
 	"access, route listing, documentation search, log reading, and configuration inspection. " +
-	"It also guards the velocity framework knowledge base: call kb-guard before writing code in an " +
-	"unfamiliar area, kb-symbol to verify an exact signature, and kb-search for intent lookups. " +
+	"It also guards the velocity framework knowledge base: call velocity_kb_guard before writing code in an " +
+	"unfamiliar area, velocity_kb_symbol to verify an exact signature, and velocity_kb_search for intent lookups. " +
 	"A miss means 'not in this KB', not 'not in the framework'. The knowledge base is a baked, " +
 	"version-stamped snapshot of velocity core; read the kb://manifest resource for its coverage boundary."
 
@@ -142,7 +142,7 @@ func configTool() *server.ToolBuilder {
 }
 
 func kbSearchTool() *server.ToolBuilder {
-	return server.NewTool("kb-search",
+	return server.NewTool("velocity_kb_search",
 		"Search the velocity framework knowledge base by intent (e.g. \"hash a password\", "+
 			"\"rate-limit http\"). Returns ranked answer cards: the helper or rule, its signature, "+
 			"a one-line how, and provenance. Call this BEFORE reaching for the standard library.").
@@ -157,7 +157,7 @@ func kbSearchTool() *server.ToolBuilder {
 }
 
 func kbSymbolTool() *server.ToolBuilder {
-	return server.NewTool("kb-symbol",
+	return server.NewTool("velocity_kb_symbol",
 		"Look up the exact velocity API surface for a name (function, method, or type). "+
 			"Returns the real signature, owning package, provenance, and deprecation status. "+
 			"Use to verify a signature instead of guessing it.").
@@ -168,7 +168,7 @@ func kbSymbolTool() *server.ToolBuilder {
 }
 
 func kbGuardTool() *server.ToolBuilder {
-	return server.NewTool("kb-guard",
+	return server.NewTool("velocity_kb_guard",
 		"Return curated guard rules and gotchas for a topic or velocity package "+
 			"(e.g. \"logging\", \"validation\", \"http\"). These encode use-velocity-not-stdlib "+
 			"mappings and known traps. Call this BEFORE writing code in an unfamiliar area.").

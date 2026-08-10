@@ -74,19 +74,19 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 			wantParams: []string{"key"},
 		},
 		{
-			name:       "kb-search",
+			name:       "velocity_kb_search",
 			tool:       kbSearchTool(),
 			wantParams: []string{"query", "kind", "limit"},
 			required:   []string{"query"},
 		},
 		{
-			name:       "kb-symbol",
+			name:       "velocity_kb_symbol",
 			tool:       kbSymbolTool(),
 			wantParams: []string{"name"},
 			required:   []string{"name"},
 		},
 		{
-			name:       "kb-guard",
+			name:       "velocity_kb_guard",
 			tool:       kbGuardTool(),
 			wantParams: []string{"topic"},
 		},
@@ -151,9 +151,9 @@ func TestRegisterTools_AllRegistered(t *testing.T) {
 		"velocity_last_error",
 		"velocity_log_entries",
 		"velocity_config",
-		"kb-search",
-		"kb-symbol",
-		"kb-guard",
+		"velocity_kb_search",
+		"velocity_kb_symbol",
+		"velocity_kb_guard",
 	}
 
 	registered := s.Tools()
@@ -178,7 +178,7 @@ func TestNewServer_KnowledgeBaseSurface(t *testing.T) {
 		t.Errorf("resource URI = %q, want %q", got, tools.KBManifestURI)
 	}
 
-	for _, want := range []string{"kb-guard", "kb-symbol", "kb-search", "kb://manifest"} {
+	for _, want := range []string{"velocity_kb_guard", "velocity_kb_symbol", "velocity_kb_search", "kb://manifest"} {
 		if !strings.Contains(instructions, want) {
 			t.Errorf("server instructions do not mention %q", want)
 		}

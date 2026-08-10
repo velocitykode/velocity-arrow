@@ -10,11 +10,11 @@ import (
 	"github.com/velocitykode/velocity-mcp/server"
 )
 
-// kbDefaultLimit is the result count kb-search returns when the caller does not
+// kbDefaultLimit is the result count velocity_kb_search returns when the caller does not
 // ask for one.
 const kbDefaultLimit = 5
 
-// NewKBSearchHandler builds the kb-search handler: hybrid keyword plus semantic
+// NewKBSearchHandler builds the velocity_kb_search handler: hybrid keyword plus semantic
 // retrieval over the whole knowledge-base snapshot for an intent query.
 func NewKBSearchHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
@@ -34,7 +34,7 @@ func NewKBSearchHandler(s *store.Store) func(context.Context, *server.Request) (
 	}
 }
 
-// NewKBSymbolHandler builds the kb-symbol handler: exact API lookup that grounds
+// NewKBSymbolHandler builds the velocity_kb_symbol handler: exact API lookup that grounds
 // a signature instead of letting the caller guess one.
 func NewKBSymbolHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
@@ -50,7 +50,7 @@ func NewKBSymbolHandler(s *store.Store) func(context.Context, *server.Request) (
 	}
 }
 
-// NewKBGuardHandler builds the kb-guard handler: curated negative knowledge for
+// NewKBGuardHandler builds the velocity_kb_guard handler: curated negative knowledge for
 // a topic or package, the "use velocity X not stdlib Y" map and known gotchas.
 func NewKBGuardHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
