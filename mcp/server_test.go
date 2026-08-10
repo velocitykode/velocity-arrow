@@ -1,11 +1,28 @@
 package mcp
 
 import (
+	"context"
+	"strings"
 	"testing"
 
+	"github.com/velocitykode/velocity-arrow/internal/embed"
+	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/store"
+	"github.com/velocitykode/velocity-arrow/mcp/tools"
 	"github.com/velocitykode/velocity-mcp/schema"
 	"github.com/velocitykode/velocity-mcp/server"
 )
+
+// openKB opens the embedded knowledge-base snapshot the server serves.
+func openKB(t *testing.T) *store.Store {
+	t.Helper()
+	s, err := store.Open(context.Background(), kb.SnapshotDB, embed.New())
+	if err != nil {
+		t.Fatalf("opening knowledge-base snapshot: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
 
 func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 	tests := []struct {
@@ -56,6 +73,23 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 			tool:       configTool(),
 			wantParams: []string{"key"},
 		},
+		{
+			name:       "kb-search",
+			tool:       kbSearchTool(),
+			wantParams: []string{"query", "kind", "limit"},
+			required:   []string{"query"},
+		},
+		{
+			name:       "kb-symbol",
+			tool:       kbSymbolTool(),
+			wantParams: []string{"name"},
+			required:   []string{"name"},
+		},
+		{
+			name:       "kb-guard",
+			tool:       kbGuardTool(),
+			wantParams: []string{"topic"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -104,10 +138,10 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 	}
 }
 
-func TestRegisterTools_AllEightRegistered(t *testing.T) {
-	s := newServer(false)
+func TestRegisterTools_AllRegistered(t *testing.T) {
+	s := newServer(false, openKB(t))
 
-	// Verify all 8 tools are registered
+	// Verify all project tools plus the knowledge-base tools are registered
 	expectedNames := []string{
 		"velocity_app_info",
 		"velocity_db_schema",
@@ -117,6 +151,9 @@ func TestRegisterTools_AllEightRegistered(t *testing.T) {
 		"velocity_last_error",
 		"velocity_log_entries",
 		"velocity_config",
+		"kb-search",
+		"kb-symbol",
+		"kb-guard",
 	}
 
 	registered := s.Tools()
@@ -126,6 +163,24 @@ func TestRegisterTools_AllEightRegistered(t *testing.T) {
 	for i, name := range expectedNames {
 		if registered[i].Name() != name {
 			t.Errorf("tools[%d] = %q, want %q", i, registered[i].Name(), name)
+		}
+	}
+}
+
+func TestNewServer_KnowledgeBaseSurface(t *testing.T) {
+	s := newServer(false, openKB(t))
+
+	resources := s.Resources()
+	if len(resources) != 1 {
+		t.Fatalf("registered resources = %d, want 1", len(resources))
+	}
+	if got := resources[0].URI(); got != tools.KBManifestURI {
+		t.Errorf("resource URI = %q, want %q", got, tools.KBManifestURI)
+	}
+
+	for _, want := range []string{"kb-guard", "kb-symbol", "kb-search", "kb://manifest"} {
+		if !strings.Contains(instructions, want) {
+			t.Errorf("server instructions do not mention %q", want)
 		}
 	}
 }
