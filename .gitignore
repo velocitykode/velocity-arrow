@@ -5,3 +5,8 @@
 
 # built binary
 /arrow
+
+# sqlite sidecars - opening the baked snapshot with the sqlite3 CLI leaves
+# these behind, and `git add -A` would commit them alongside the .db
+*.db-shm
+*.db-wal
