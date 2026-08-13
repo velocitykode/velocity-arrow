@@ -67,12 +67,60 @@ var secretKeys = map[string]bool{
 	"QUEUE_REDIS_PASSWORD":  true,
 }
 
+// secretMarkers mark an .env key as carrying a credential rather than
+// describing one. KEY is deliberately broad: QUEUE_SIGNING_KEY and any
+// *_PRIVATE_KEY / *_API_KEY hold real secrets and matched none of the older
+// SECRET / PASSWORD / TOKEN spellings.
+var secretMarkers = []string{
+	"SECRET",
+	"PASSWORD",
+	"PASSWD",
+	"TOKEN",
+	"CREDENTIAL",
+	"PRIVATE",
+	"SIGNING",
+	"KEY",
+}
+
+// knobSuffixes end keys that configure a credential without holding one
+// (CACHE_KEY_PREFIX, AUTH_JWT_TTL). Redacting these would hide useful config
+// and teach nothing, so they stay readable.
+var knobSuffixes = []string{
+	"_PREFIX",
+	"_PATH",
+	"_FILE",
+	"_ENABLED",
+	"_DISABLED",
+	"_LIFETIME",
+	"_TTL",
+	"_LENGTH",
+	"_ALGO",
+	"_DRIVER",
+	"_ROTATION",
+}
+
 func isSecretKey(key string) bool {
 	if secretKeys[key] {
 		return true
 	}
+
 	upper := strings.ToUpper(key)
-	return strings.Contains(upper, "SECRET") ||
-		strings.Contains(upper, "PASSWORD") ||
-		strings.Contains(upper, "TOKEN") && !strings.Contains(upper, "CSRF")
+	for _, suffix := range knobSuffixes {
+		if strings.HasSuffix(upper, suffix) {
+			return false
+		}
+	}
+
+	// A CSRF token is public by design, but CSRF_SECRET is not - drop the
+	// TOKEN marker for CSRF keys and judge them on what is left.
+	if strings.Contains(upper, "CSRF") {
+		upper = strings.ReplaceAll(upper, "TOKEN", "")
+	}
+
+	for _, marker := range secretMarkers {
+		if strings.Contains(upper, marker) {
+			return true
+		}
+	}
+	return false
 }

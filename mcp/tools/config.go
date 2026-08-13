@@ -27,10 +27,6 @@ func HandleConfig(ctx context.Context, req *server.Request) (*server.Response, e
 }
 
 func handleSpecificKey(key string, config velocity.Config) (*server.Response, error) {
-	if isSecretKey(key) {
-		return server.Text(fmt.Sprintf("`%s` = [REDACTED] (secret value)", key)), nil
-	}
-
 	// Read from .env for the raw value
 	dir, _ := os.Getwd()
 	env, err := godotenv.Read(filepath.Join(dir, ".env"))
@@ -42,8 +38,15 @@ func handleSpecificKey(key string, config velocity.Config) (*server.Response, er
 	if !ok {
 		val = os.Getenv(key)
 		if val == "" {
+			// Answer "not found" before redacting: a key that is set
+			// nowhere has no value to protect, and reporting it as
+			// [REDACTED] would claim a secret exists.
 			return server.Text(fmt.Sprintf("Key `%s` not found in .env or environment.", key)), nil
 		}
+	}
+
+	if isSecretKey(key) {
+		return server.Text(fmt.Sprintf("`%s` = [REDACTED] (secret value)", key)), nil
 	}
 
 	return server.Text(fmt.Sprintf("`%s` = `%s`", key, val)), nil
