@@ -6,7 +6,7 @@
 //
 // Usage:
 //
-//	go run ./cmd/ingest -velocity ~/code/velocity -version v0.72.0
+//	go run ./cmd/ingest -velocity ~/code/velocity -version v0.73.0
 //
 // Embeddings require a configured backend (see internal/embed). With none, the
 // snapshot is built keyword-only and the server still serves FTS5 results.
