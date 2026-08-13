@@ -44,7 +44,7 @@ user, err := orm.Model[User]{}.Create(map[string]any{
 Migrations are managed through the Velocity CLI:
 
 ```bash
-vel make:migration create_users_table
+vel gen migration create_users_table
 vel migrate
-vel migrate:rollback
+vel migrate rollback
 ```
