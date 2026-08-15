@@ -6,7 +6,12 @@
 //
 // Usage:
 //
-//	go run ./cmd/ingest -velocity ~/code/velocity -version v0.73.0
+//	go run ./cmd/ingest -velocity ~/code/velocity -version v0.73.0 \
+//	    -docs ~/code/velocity-docs/content/docs
+//
+// -docs points at the Hugo content tree of the published docs site (vel.build);
+// its pages land as doc-kind entries served by velocity_search_docs. Omitting it
+// builds a snapshot without documentation pages.
 //
 // Embeddings require a configured backend (see internal/embed). With none, the
 // snapshot is built keyword-only and the server still serves FTS5 results.
@@ -46,6 +51,7 @@ func run() error {
 	root := flag.String("velocity", defaultRoot, "path to the velocity source tree")
 	version := flag.String("version", "dev", "velocity version stamp for entries and manifest")
 	out := flag.String("out", filepath.Join("internal", "kb", "data", "velocity-kb.db"), "output snapshot path")
+	docsRoot := flag.String("docs", "", "path to the published docs content tree (e.g. ~/code/velocity-docs/content/docs); empty skips doc pages")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -68,6 +74,19 @@ func run() error {
 		return fmt.Errorf("markdown: %w", err)
 	}
 	entries = append(entries, curated...)
+
+	if *docsRoot == "" {
+		fmt.Fprintln(os.Stderr, "ingest: no -docs path; snapshot will have no documentation pages")
+	} else {
+		pages, derr := corpus.Docs(os.DirFS(*docsRoot), *version)
+		if derr != nil {
+			return fmt.Errorf("docs: %w", derr)
+		}
+		if len(pages) == 0 {
+			return fmt.Errorf("docs: no pages found under %q; check the path", *docsRoot)
+		}
+		entries = append(entries, pages...)
+	}
 
 	if len(entries) == 0 {
 		return fmt.Errorf("no entries gathered; check -velocity path %q", *root)

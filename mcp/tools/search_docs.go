@@ -3,51 +3,140 @@ package tools
 import (
 	"context"
 	"fmt"
-	"math"
-	"sort"
 	"strings"
 
-	"github.com/velocitykode/velocity-arrow/docs"
+	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/store"
 	"github.com/velocitykode/velocity-mcp/server"
 )
 
-// HandleSearchDocs searches embedded Velocity documentation using TF-IDF.
-func HandleSearchDocs(ctx context.Context, req *server.Request) (*server.Response, error) {
-	queries := stringSliceArg(req, "queries")
-	if len(queries) == 0 {
-		return server.Error("queries parameter is required"), nil
-	}
+// docsSiteBase prefixes entry refs (site paths like "/docs/core/async") so the
+// caller gets a fetchable page URL.
+const docsSiteBase = "https://vel.build"
 
-	packages := stringSliceArg(req, "packages")
-	tokenLimit := 3000
-	if v, ok := req.IntOK("token_limit"); ok {
-		tokenLimit = int(v)
-	}
-	if tokenLimit <= 0 {
-		tokenLimit = 3000
-	}
+// docsPerQueryLimit is how many pages each query pulls from the snapshot before
+// merging; the token budget, not this, bounds what is actually returned.
+const docsPerQueryLimit = 8
 
-	results := searchDocs(queries, packages, tokenLimit)
+// docsDefaultTokenLimit caps the response when the caller sets no budget.
+const docsDefaultTokenLimit = 3000
 
-	if len(results) == 0 {
-		return server.Text("No documentation found matching your queries."), nil
+// NewSearchDocsHandler builds the velocity_search_docs handler: FTS5 retrieval
+// over the doc pages baked into the knowledge-base snapshot (the published
+// vel.build corpus). Page bodies are included best-first until the token budget
+// runs out; pages past the budget are listed as title + URL so the caller knows
+// they exist and can fetch or re-query.
+func NewSearchDocsHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
+	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
+		queries := stringSliceArg(req, "queries")
+		if len(queries) == 0 {
+			return server.Error("queries parameter is required"), nil
+		}
+
+		tokenLimit := docsDefaultTokenLimit
+		if v, ok := req.IntOK("token_limit"); ok && v > 0 {
+			tokenLimit = int(v)
+		}
+
+		results, err := searchDocPages(ctx, s, queries)
+		if err != nil {
+			return server.Error(fmt.Sprintf("docs search failed: %v", err)), nil
+		}
+		if len(results) == 0 {
+			return server.Text("No documentation pages matched. The corpus is the published " +
+				"vel.build docs; a miss here likely means the topic is undocumented - " +
+				"fall back to framework source, do not guess."), nil
+		}
+		return server.Text(formatDocResults(results, tokenLimit)), nil
 	}
+}
 
+// searchDocPages runs every query against the doc-kind entries and merges the
+// ranked lists, keeping each page's best score and preserving best-first order.
+func searchDocPages(ctx context.Context, s *store.Store, queries []string) ([]kb.Result, error) {
+	var merged []kb.Result
+	seen := map[int64]bool{}
+	for _, q := range queries {
+		rs, err := s.Search(ctx, q, kb.KindDoc, docsPerQueryLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range rs {
+			if seen[r.ID] {
+				continue
+			}
+			seen[r.ID] = true
+			merged = append(merged, r)
+		}
+	}
+	return merged, nil
+}
+
+// formatDocResults renders matched pages: a totals header, then full bodies
+// best-first within the token budget, then a link list for the remainder.
+func formatDocResults(results []kb.Result, tokenLimit int) string {
 	var b strings.Builder
-	b.WriteString("# Documentation Search Results\n\n")
+	fmt.Fprintf(&b, "# Documentation Search Results\nPages matched: %d\n\n", len(results))
 
-	totalTokens := 0
-	for _, r := range results {
-		entry := fmt.Sprintf("## %s\n\n%s\n\n---\n\n", r.title, r.content)
-		entryTokens := estimateTokens(entry)
-		if totalTokens+entryTokens > tokenLimit {
+	budget := tokenLimit - estimateTokens(b.String())
+	var overflow []kb.Result
+	for i, r := range results {
+		card := formatDocCard(&r.Entry)
+		cost := estimateTokens(card)
+		if i > 0 && cost > budget {
+			overflow = append(overflow, results[i:]...)
 			break
 		}
-		b.WriteString(entry)
-		totalTokens += entryTokens
+		if cost > budget {
+			// Even the best page exceeds the budget: clamp its body rather
+			// than returning nothing useful.
+			card = clampToTokens(card, budget)
+			cost = estimateTokens(card)
+		}
+		b.WriteString(card)
+		budget -= cost
 	}
 
-	return server.Text(b.String()), nil
+	if len(overflow) > 0 {
+		b.WriteString("## More matches (over token budget - fetch or re-query)\n")
+		for _, r := range overflow {
+			fmt.Fprintf(&b, "- %s - %s%s\n", r.Title, docsSiteBase, r.Ref)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// formatDocCard renders one page: title with its docs section, source URL, body.
+func formatDocCard(e *kb.Entry) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "## %s (%s)\n", e.Title, docSection(e))
+	fmt.Fprintf(&b, "source: %s%s\n\n", docsSiteBase, e.Ref)
+	b.WriteString(strings.TrimSpace(e.Body))
+	b.WriteString("\n\n---\n\n")
+	return b.String()
+}
+
+// docSection reports the docs section a page belongs to ("core", "advanced",
+// ...), derived from its site path.
+func docSection(e *kb.Entry) string {
+	parts := strings.Split(strings.TrimPrefix(e.Ref, "/docs/"), "/")
+	if len(parts) > 1 && parts[0] != "" {
+		return parts[0]
+	}
+	return "docs"
+}
+
+// clampToTokens truncates text to approximately the given token budget,
+// marking the cut.
+func clampToTokens(text string, tokens int) string {
+	limit := tokens * 4 // inverse of estimateTokens
+	if limit >= len(text) {
+		return text
+	}
+	if limit < 0 {
+		limit = 0
+	}
+	return text[:limit] + "\n[truncated: token budget reached - raise token_limit or fetch the source URL]\n\n"
 }
 
 // stringSliceArg returns the named argument as a []string: a []string passes
@@ -68,102 +157,7 @@ func stringSliceArg(req *server.Request, key string) []string {
 	return nil
 }
 
-type searchResult struct {
-	title   string
-	content string
-	score   float64
-}
-
-func searchDocs(queries, packages []string, tokenLimit int) []searchResult {
-	entries := docs.AllDocs()
-
-	if len(entries) == 0 {
-		return nil
-	}
-
-	// Filter by packages if specified
-	if len(packages) > 0 {
-		var filtered []docs.DocEntry
-		for _, entry := range entries {
-			for _, pkg := range packages {
-				if strings.Contains(strings.ToLower(entry.Path), strings.ToLower(pkg)) {
-					filtered = append(filtered, entry)
-					break
-				}
-			}
-		}
-		entries = filtered
-	}
-
-	// Score each document against all queries
-	var results []searchResult
-	for _, entry := range entries {
-		score := 0.0
-		for _, query := range queries {
-			score += tfidfScore(query, entry.Content, entries)
-		}
-		if score > 0 {
-			results = append(results, searchResult{
-				title:   entry.Title,
-				content: entry.Content,
-				score:   score,
-			})
-		}
-	}
-
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].score > results[j].score
-	})
-
-	return results
-}
-
-func tfidfScore(query, document string, corpus []docs.DocEntry) float64 {
-	queryTerms := tokenize(query)
-	docTerms := tokenize(document)
-
-	if len(docTerms) == 0 {
-		return 0
-	}
-
-	// Term frequency in document
-	termCount := make(map[string]int)
-	for _, t := range docTerms {
-		termCount[t]++
-	}
-
-	score := 0.0
-	for _, term := range queryTerms {
-		tf := float64(termCount[term]) / float64(len(docTerms))
-
-		// Document frequency across corpus
-		df := 0
-		for _, entry := range corpus {
-			if strings.Contains(strings.ToLower(entry.Content), term) {
-				df++
-			}
-		}
-
-		idf := math.Log(float64(len(corpus)+1) / float64(df+1))
-		score += tf * idf
-	}
-
-	return score
-}
-
-func tokenize(text string) []string {
-	text = strings.ToLower(text)
-	var tokens []string
-	for _, word := range strings.Fields(text) {
-		word = strings.Trim(word, ".,;:!?()[]{}\"'`*#")
-		if len(word) > 1 {
-			tokens = append(tokens, word)
-		}
-	}
-	return tokens
-}
-
+// estimateTokens is the rough ~4-chars-per-token budget heuristic.
 func estimateTokens(text string) int {
-	// Rough estimate: ~4 chars per token
 	return len(text) / 4
 }

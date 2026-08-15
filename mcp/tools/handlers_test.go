@@ -120,6 +120,40 @@ func TestHandleAppInfo(t *testing.T) {
 		if !strings.Contains(text, "AuthProvider") {
 			t.Error("should contain detected provider")
 		}
+		// Default trims the dependency tree to a total.
+		if !strings.Contains(text, "(pass section=deps to list)") {
+			t.Error("default should summarise dependencies to a count")
+		}
+		if strings.Contains(text, "github.com/joho/godotenv") {
+			t.Error("default should not list the dependency tree")
+		}
+	})
+}
+
+func TestHandleAppInfo_SectionDeps(t *testing.T) {
+	dir := setupFixtureProject(t)
+	withWorkDir(t, dir, func() {
+		result, err := HandleAppInfo(context.Background(), makeRequest(map[string]any{"section": "deps"}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := result.Contents()[0].(*content.Text).String()
+		if !strings.Contains(text, "github.com/joho/godotenv") {
+			t.Error("section=deps should list the dependency tree")
+		}
+		if strings.Contains(text, "## Module") {
+			t.Error("section=deps should not render the module section")
+		}
+	})
+}
+
+func TestHandleAppInfo_InvalidSection(t *testing.T) {
+	dir := setupFixtureProject(t)
+	withWorkDir(t, dir, func() {
+		result, _ := HandleAppInfo(context.Background(), makeRequest(map[string]any{"section": "bogus"}))
+		if !result.IsError() {
+			t.Error("expected error for invalid section")
+		}
 	})
 }
 
@@ -243,47 +277,54 @@ func TestHandleRoutes_EmptyProject(t *testing.T) {
 	})
 }
 
-// --- HandleSearchDocs ---
+// --- velocity_search_docs (snapshot-backed) ---
 
-func TestHandleSearchDocs(t *testing.T) {
-	result, err := HandleSearchDocs(context.Background(), makeRequest(map[string]any{
-		"queries": []any{"velocity orm"},
+func TestHandleSearchDocs_FindsAsyncPage(t *testing.T) {
+	handler := NewSearchDocsHandler(openKBStore(t))
+	result, err := handler(context.Background(), makeRequest(map[string]any{
+		"queries": []any{"how does async work"},
 	}))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	text := result.Contents()[0].(*content.Text).String()
 	if !strings.Contains(text, "Documentation Search Results") {
-		t.Error("should contain results heading")
+		t.Errorf("should contain results heading:\n%s", text)
+	}
+	if !strings.Contains(text, "https://vel.build/docs/core/async") {
+		t.Errorf("async query should surface the async page:\n%s", text)
 	}
 }
 
 func TestHandleSearchDocs_NoQueries(t *testing.T) {
-	result, _ := HandleSearchDocs(context.Background(), makeRequest(nil))
+	handler := NewSearchDocsHandler(openKBStore(t))
+	result, _ := handler(context.Background(), makeRequest(nil))
 	if !result.IsError() {
 		t.Error("expected error for missing queries")
 	}
 }
 
-func TestHandleSearchDocs_WithPackageFilter(t *testing.T) {
-	result, _ := HandleSearchDocs(context.Background(), makeRequest(map[string]any{
-		"queries":  []any{"models queries"},
-		"packages": []any{"orm"},
+func TestHandleSearchDocs_MissStaysExplicit(t *testing.T) {
+	handler := NewSearchDocsHandler(openKBStore(t))
+	result, _ := handler(context.Background(), makeRequest(map[string]any{
+		"queries": []any{"zzqqxx-not-a-doc-topic"},
 	}))
 	text := result.Contents()[0].(*content.Text).String()
-	if strings.Contains(text, "Getting Started") {
-		t.Error("package filter should exclude getting-started")
+	if !strings.Contains(text, "No documentation pages matched") {
+		t.Errorf("miss message expected:\n%s", text)
 	}
 }
 
 func TestHandleSearchDocs_TokenLimit(t *testing.T) {
-	result, _ := HandleSearchDocs(context.Background(), makeRequest(map[string]any{
-		"queries":     []any{"velocity"},
-		"token_limit": float64(10),
+	handler := NewSearchDocsHandler(openKBStore(t))
+	result, _ := handler(context.Background(), makeRequest(map[string]any{
+		"queries":     []any{"database queries"},
+		"token_limit": float64(200),
 	}))
 	text := result.Contents()[0].(*content.Text).String()
-	if len(text) > 500 {
-		t.Error("response should be limited by token_limit")
+	// ~200 tokens ≈ 800 chars of budget; allow headroom for the link list.
+	if len(text) > 4000 {
+		t.Errorf("response length %d should be bounded by token_limit", len(text))
 	}
 }
 

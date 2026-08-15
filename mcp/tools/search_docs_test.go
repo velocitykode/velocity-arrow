@@ -4,33 +4,76 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/velocitykode/velocity-arrow/docs"
+	"github.com/velocitykode/velocity-arrow/internal/kb"
 )
 
-func TestTokenize(t *testing.T) {
-	tokens := tokenize("Hello, World! This is a test.")
-	expected := []string{"hello", "world", "this", "is", "test"}
-	if len(tokens) != len(expected) {
-		t.Fatalf("tokenize length = %d, want %d: %v", len(tokens), len(expected), tokens)
-	}
-	for i, tok := range tokens {
-		if tok != expected[i] {
-			t.Errorf("token[%d] = %q, want %q", i, tok, expected[i])
+func docResult(id int64, title, ref, body string) kb.Result {
+	return kb.Result{Entry: kb.Entry{ID: id, Kind: kb.KindDoc, Title: title, Ref: ref, Body: body}}
+}
+
+func TestFormatDocResults_HeaderAndCard(t *testing.T) {
+	out := formatDocResults([]kb.Result{
+		docResult(1, "Async", "/docs/core/async", "Body about async."),
+	}, 3000)
+
+	for _, want := range []string{
+		"Pages matched: 1",
+		"## Async (core)",
+		"source: https://vel.build/docs/core/async",
+		"Body about async.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
 }
 
-func TestTokenize_Empty(t *testing.T) {
-	tokens := tokenize("")
-	if len(tokens) != 0 {
-		t.Errorf("expected empty, got %v", tokens)
+func TestFormatDocResults_OverflowListsLinks(t *testing.T) {
+	big := strings.Repeat("filler content for the async body ", 100) // ~3400 chars, ~850 tokens
+	out := formatDocResults([]kb.Result{
+		docResult(1, "Async", "/docs/core/async", big),
+		docResult(2, "Queue", "/docs/advanced/queue", big),
+	}, 900)
+
+	if !strings.Contains(out, "filler content") {
+		t.Errorf("best page body should be included:\n%s", out)
+	}
+	if !strings.Contains(out, "More matches (over token budget") {
+		t.Errorf("overflow header missing:\n%s", out)
+	}
+	if !strings.Contains(out, "- Queue - https://vel.build/docs/advanced/queue") {
+		t.Errorf("overflow link missing:\n%s", out)
+	}
+	if strings.Count(out, "filler content") > 100 {
+		t.Error("second page body should not be inlined")
 	}
 }
 
-func TestTokenize_SingleChar(t *testing.T) {
-	tokens := tokenize("a b c go")
-	if len(tokens) != 1 || tokens[0] != "go" {
-		t.Errorf("expected [go], got %v", tokens)
+func TestFormatDocResults_ClampsSingleOversizedPage(t *testing.T) {
+	big := strings.Repeat("word ", 2000) // ~10k chars, ~2500 tokens
+	out := formatDocResults([]kb.Result{
+		docResult(1, "Async", "/docs/core/async", big),
+	}, 500)
+
+	if !strings.Contains(out, "[truncated: token budget reached") {
+		t.Errorf("expected truncation marker:\n%s", out)
+	}
+	if len(out) > 500*4+400 {
+		t.Errorf("output %d chars exceeds clamped budget", len(out))
+	}
+}
+
+func TestDocSection(t *testing.T) {
+	cases := []struct{ ref, want string }{
+		{"/docs/core/async", "core"},
+		{"/docs/advanced/queue", "advanced"},
+		{"/docs/overview", "docs"},
+		{"/docs", "docs"},
+	}
+	for _, c := range cases {
+		if got := docSection(&kb.Entry{Ref: c.ref}); got != c.want {
+			t.Errorf("docSection(%q) = %q, want %q", c.ref, got, c.want)
+		}
 	}
 }
 
@@ -40,100 +83,5 @@ func TestEstimateTokens(t *testing.T) {
 	}
 	if estimateTokens("") != 0 {
 		t.Error("empty string should estimate to 0 tokens")
-	}
-}
-
-func TestTfidfScore_HigherForRelevantDoc(t *testing.T) {
-	corpus := docs.AllDocs()
-	if len(corpus) == 0 {
-		t.Skip("no embedded docs")
-	}
-
-	// Find the ORM doc and the getting-started doc
-	var ormContent, gsContent string
-	for _, entry := range corpus {
-		if strings.Contains(entry.Path, "orm") {
-			ormContent = entry.Content
-		}
-		if strings.Contains(entry.Path, "getting-started") {
-			gsContent = entry.Content
-		}
-	}
-
-	if ormContent == "" || gsContent == "" {
-		t.Skip("need both orm and getting-started docs")
-	}
-
-	ormScore := tfidfScore("orm models queries", ormContent, corpus)
-	gsScore := tfidfScore("orm models queries", gsContent, corpus)
-
-	if ormScore <= gsScore {
-		t.Errorf("ORM doc should score higher than getting-started for 'orm models queries': orm=%f, gs=%f", ormScore, gsScore)
-	}
-}
-
-func TestTfidfScore_ZeroForNoMatch(t *testing.T) {
-	corpus := docs.AllDocs()
-	score := tfidfScore("xyzzy_nonexistent_12345", "some random document content", corpus)
-	if score != 0 {
-		t.Errorf("score should be 0 for non-matching query, got %f", score)
-	}
-}
-
-func TestSearchDocs_ResultsSortedByRelevance(t *testing.T) {
-	results := searchDocs([]string{"orm models database"}, nil, 3000)
-	if len(results) < 2 {
-		t.Skip("need at least 2 results to test sorting")
-	}
-
-	// Results should be in descending score order
-	for i := 1; i < len(results); i++ {
-		if results[i].score > results[i-1].score {
-			t.Errorf("results not sorted: [%d].score=%f > [%d].score=%f", i, results[i].score, i-1, results[i-1].score)
-		}
-	}
-}
-
-func TestSearchDocs_PackageFilter_ExcludesOtherPackages(t *testing.T) {
-	// Without filter: should return both getting-started and orm docs
-	allResults := searchDocs([]string{"velocity"}, nil, 3000)
-	if len(allResults) < 2 {
-		t.Skip("need at least 2 docs to test filtering")
-	}
-
-	// With orm filter: should only return orm-path docs
-	filtered := searchDocs([]string{"velocity"}, []string{"orm"}, 3000)
-
-	// Filtered should have fewer results than unfiltered
-	if len(filtered) >= len(allResults) {
-		t.Errorf("filter should reduce results: all=%d, filtered=%d", len(allResults), len(filtered))
-	}
-
-	// No filtered result should be from the getting-started path
-	for _, r := range filtered {
-		if strings.Contains(strings.ToLower(r.title), "getting started") {
-			t.Errorf("orm filter should exclude getting-started doc, got %q", r.title)
-		}
-	}
-}
-
-func TestSearchDocs_NoMatch(t *testing.T) {
-	results := searchDocs([]string{"xyzzy_nonexistent_term_12345"}, nil, 3000)
-	if len(results) != 0 {
-		t.Errorf("expected no results, got %d", len(results))
-	}
-}
-
-func TestSearchDocs_TokenLimit_Truncates(t *testing.T) {
-	unlimited := searchDocs([]string{"velocity"}, nil, 1000000)
-	limited := searchDocs([]string{"velocity"}, nil, 50)
-
-	if len(unlimited) == 0 {
-		t.Skip("no results for velocity query")
-	}
-
-	// With a 50-token limit (~200 chars), we should get fewer results than unlimited
-	if len(limited) >= len(unlimited) && len(unlimited) > 1 {
-		t.Errorf("token limit should reduce results: unlimited=%d, limited=%d", len(unlimited), len(limited))
 	}
 }

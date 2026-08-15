@@ -13,8 +13,19 @@ import (
 	"github.com/velocitykode/velocity-mcp/server"
 )
 
-// HandleAppInfo returns Velocity application info by parsing go.mod and provider files.
+// HandleAppInfo returns Velocity application info by parsing go.mod and
+// provider files. The section parameter picks what is rendered: "module",
+// "providers", "deps", or "all"; the default is module + providers with the
+// dependency tree summarised to a count, since the full tree is the expensive
+// part and rarely the question.
 func HandleAppInfo(ctx context.Context, req *server.Request) (*server.Response, error) {
+	section := strings.ToLower(strings.TrimSpace(req.String("section")))
+	switch section {
+	case "", "module", "providers", "deps", "all":
+	default:
+		return server.Error(fmt.Sprintf("invalid section %q: use module, providers, deps, or all", section)), nil
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return server.Error(fmt.Sprintf("getting working directory: %v", err)), nil
@@ -25,39 +36,50 @@ func HandleAppInfo(ctx context.Context, req *server.Request) (*server.Response, 
 		return server.Error(fmt.Sprintf("parsing go.mod: %v", err)), nil
 	}
 
-	providers := scanProviders(dir)
+	wantModule := section == "" || section == "module" || section == "all"
+	wantProviders := section == "" || section == "providers" || section == "all"
+	wantDeps := section == "deps" || section == "all"
 
 	var b strings.Builder
 	b.WriteString("# Velocity Application Info\n\n")
 
-	b.WriteString("## Module\n")
-	b.WriteString(fmt.Sprintf("- Module: %s\n", goMod.module))
-	b.WriteString(fmt.Sprintf("- Go version: %s\n", goMod.goVersion))
+	if wantModule {
+		b.WriteString("## Module\n")
+		b.WriteString(fmt.Sprintf("- Module: %s\n", goMod.module))
+		b.WriteString(fmt.Sprintf("- Go version: %s\n", goMod.goVersion))
 
-	// Find Velocity version
-	velVersion := "not found"
-	for _, dep := range goMod.deps {
-		if strings.Contains(dep.path, "velocitykode/velocity") && !strings.Contains(dep.path, "/") ||
-			dep.path == "github.com/velocitykode/velocity" {
-			velVersion = dep.version
-			break
+		velVersion := "not found"
+		for _, dep := range goMod.deps {
+			if dep.path == "github.com/velocitykode/velocity" {
+				velVersion = dep.version
+				break
+			}
+		}
+		b.WriteString(fmt.Sprintf("- Velocity version: %s\n", velVersion))
+		b.WriteString("\n")
+	}
+
+	if wantDeps {
+		b.WriteString("## Dependencies\n")
+		for _, dep := range goMod.deps {
+			b.WriteString(fmt.Sprintf("- %s %s\n", dep.path, dep.version))
+		}
+		b.WriteString("\n")
+	} else {
+		b.WriteString(fmt.Sprintf("Dependencies: %d (pass section=deps to list)\n\n", len(goMod.deps)))
+	}
+
+	if wantProviders {
+		providers := scanProviders(dir)
+		if len(providers) > 0 {
+			b.WriteString("## Registered Providers\n")
+			for _, p := range providers {
+				b.WriteString(fmt.Sprintf("- %s\n", p))
+			}
 		}
 	}
-	b.WriteString(fmt.Sprintf("- Velocity version: %s\n", velVersion))
 
-	b.WriteString("\n## Dependencies\n")
-	for _, dep := range goMod.deps {
-		b.WriteString(fmt.Sprintf("- %s %s\n", dep.path, dep.version))
-	}
-
-	if len(providers) > 0 {
-		b.WriteString("\n## Registered Providers\n")
-		for _, p := range providers {
-			b.WriteString(fmt.Sprintf("- %s\n", p))
-		}
-	}
-
-	return server.Text(b.String()), nil
+	return server.Text(strings.TrimRight(b.String(), "\n") + "\n"), nil
 }
 
 type goModInfo struct {

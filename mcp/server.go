@@ -54,7 +54,7 @@ func registeredTools(allowWrites bool, kbStore *store.Store) []server.Tool {
 		dbSchemaTool().HandleFunc(tools.HandleDBSchema),
 		dbQueryTool(allowWrites).HandleFunc(tools.NewDBQueryHandler(allowWrites)),
 		routesTool().HandleFunc(tools.HandleRoutes),
-		searchDocsTool().HandleFunc(tools.HandleSearchDocs),
+		searchDocsTool().HandleFunc(tools.NewSearchDocsHandler(kbStore)),
 		lastErrorTool().HandleFunc(tools.HandleLastError),
 		logEntriesTool().HandleFunc(tools.HandleLogEntries),
 		configTool().HandleFunc(tools.HandleConfig),
@@ -66,7 +66,15 @@ func registeredTools(allowWrites bool, kbStore *store.Store) []server.Tool {
 
 func appInfoTool() *server.ToolBuilder {
 	return server.NewTool("velocity_app_info",
-		"Get Velocity application info: Go version, Velocity version, dependencies, and registered providers.")
+		"Get Velocity application info: module, Go and Velocity versions, registered providers, "+
+			"and (on request) the dependency tree. Default returns module + providers with a "+
+			"dependency count; pass section=deps only when the tree itself is the question.").
+		WithSchema(func(s *schema.Object) {
+			s.Enum("section", "module", "providers", "deps", "all").
+				Description("Which section to return: 'module' (module, Go and Velocity versions), " +
+					"'providers' (registered providers), 'deps' (full dependency list), 'all'. " +
+					"Default: module + providers with the dependency total only.")
+		})
 }
 
 func dbSchemaTool() *server.ToolBuilder {
@@ -117,14 +125,15 @@ func routesTool() *server.ToolBuilder {
 
 func searchDocsTool() *server.ToolBuilder {
 	return server.NewTool("velocity_search_docs",
-		"Search the embedded Velocity documentation.").
+		"Search the baked Velocity documentation corpus (the published vel.build pages, "+
+			"FTS5-ranked). Returns matching pages best-first: full body within the token "+
+			"budget, then title + URL for the rest. A miss likely means the topic is "+
+			"undocumented; fall back to framework source.").
+		WithReadOnlyHint(true).
 		WithSchema(func(s *schema.Object) {
 			s.Array("queries").
 				Required().
 				Description("Search queries to run against the docs.").
-				Items("string")
-			s.Array("packages").
-				Description("Filter by package names (e.g., orm, cache, queue).").
 				Items("string")
 			s.Number("token_limit").
 				Description("Maximum tokens in the response. Default: 3000.")
@@ -176,8 +185,8 @@ func kbSearchTool() *server.ToolBuilder {
 		WithSchema(func(s *schema.Object) {
 			s.String("query").Required().Description("Intent or keywords to search for.").Min(1)
 			s.Enum("kind", string(kb.KindRule), string(kb.KindSymbol), string(kb.KindHelper),
-				string(kb.KindRecipe), string(kb.KindConcept)).
-				Description("Optional: restrict to one kind of entry.")
+				string(kb.KindRecipe), string(kb.KindConcept), string(kb.KindDoc)).
+				Description("Optional: restrict to one kind of entry ('doc' = published documentation pages).")
 			s.Integer("limit").Description("Max results (default 5).").Min(1).Max(25)
 		})
 }

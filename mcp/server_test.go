@@ -34,7 +34,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 		{
 			name:       "velocity_app_info",
 			tool:       appInfoTool(),
-			wantParams: nil, // no params
+			wantParams: []string{"section"},
 		},
 		{
 			name:       "velocity_db_schema",
@@ -55,7 +55,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 		{
 			name:       "velocity_search_docs",
 			tool:       searchDocsTool(),
-			wantParams: []string{"queries", "packages", "token_limit"},
+			wantParams: []string{"queries", "token_limit"},
 			required:   []string{"queries"},
 		},
 		{

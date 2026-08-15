@@ -17,10 +17,12 @@ const (
 	KindRecipe Kind = "recipe"
 	// KindConcept is a framework concept the LLM cannot infer from source alone.
 	KindConcept Kind = "concept"
+	// KindDoc is one published documentation page (vel.build), body = full page.
+	KindDoc Kind = "doc"
 )
 
 // Kinds lists every valid Kind, in retrieval-priority order.
-var Kinds = []Kind{KindRule, KindSymbol, KindHelper, KindRecipe, KindConcept}
+var Kinds = []Kind{KindRule, KindSymbol, KindHelper, KindRecipe, KindConcept, KindDoc}
 
 // Entry is one atomic knowledge card: the smallest correct unit an LLM can act
 // on. Bodies are answer-shaped, not document-shaped. Every Entry carries
