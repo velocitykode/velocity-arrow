@@ -39,7 +39,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 		{
 			name:       "velocity_db_schema",
 			tool:       dbSchemaTool(),
-			wantParams: []string{"summary", "filter", "database"},
+			wantParams: []string{"detail", "filter", "database"},
 		},
 		{
 			name:       "velocity_db_query",
