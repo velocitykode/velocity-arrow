@@ -125,10 +125,19 @@ func lastErrorTool() *server.ToolBuilder {
 
 func logEntriesTool() *server.ToolBuilder {
 	return server.NewTool("velocity_log_entries",
-		"Read the last N log entries from the application log file.").
+		"Read the last N log entries from the application log file, with optional level, "+
+			"pattern and date filters. Consecutive identical entries are collapsed into one "+
+			"line with a repeat count, and totals (scanned/matched/returned) are always reported.").
 		WithSchema(func(s *schema.Object) {
-			s.Number("entries").
-				Description("Number of entries to return. Default: 10.")
+			s.Enum("level", "DEBUG", "INFO", "WARNING", "ERROR").
+				Description("Minimum severity: return entries at this level and above.")
+			s.String("pattern").
+				Description("Case-insensitive substring to match against entries (not a regex).")
+			s.Integer("limit").
+				Description("Max entries to return, after filtering and collapsing. Default: 10.").
+				Min(1).Max(100)
+			s.String("date").
+				Description("Read a specific day's log file (YYYY-MM-DD). Default: latest.")
 		})
 }
 

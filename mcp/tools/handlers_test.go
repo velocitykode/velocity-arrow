@@ -320,14 +320,14 @@ func TestHandleLogEntries(t *testing.T) {
 	dir := setupFixtureProject(t)
 	withWorkDir(t, dir, func() {
 		result, err := HandleLogEntries(context.Background(), makeRequest(map[string]any{
-			"entries": float64(2),
+			"limit": float64(2),
 		}))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		text := result.Contents()[0].(*content.Text).String()
-		if !strings.Contains(text, "Last 2 Log Entries") {
-			t.Errorf("should show last 2, got: %s", text)
+		if !strings.Contains(text, "Returned: 2") {
+			t.Errorf("should return 2 entries, got: %s", text)
 		}
 	})
 }
