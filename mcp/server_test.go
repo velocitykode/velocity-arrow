@@ -66,7 +66,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 		{
 			name:       "velocity_log_entries",
 			tool:       logEntriesTool(),
-			wantParams: []string{"entries"},
+			wantParams: []string{"level", "pattern", "limit", "date"},
 		},
 		{
 			name:       "velocity_config",
