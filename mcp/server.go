@@ -71,10 +71,13 @@ func appInfoTool() *server.ToolBuilder {
 
 func dbSchemaTool() *server.ToolBuilder {
 	return server.NewTool("velocity_db_schema",
-		"Explore the database schema. Use summary mode first, then request specific tables.").
+		"Explore the database schema: tables, columns, indexes, and constraints. "+
+			"One call with a table filter returns everything about that table.").
 		WithSchema(func(s *schema.Object) {
-			s.Boolean("summary").
-				Description("When true, returns only table names and column types. Default: true.")
+			s.Enum("detail", "columns", "full").
+				Description("Detail level: 'columns' lists column names and types; 'full' adds nullable/default/key " +
+					"plus indexes and constraints. Default: 'full' when the filter matches a single table, " +
+					"'columns' for a multi-table listing.")
 			s.String("filter").
 				Description("Filter tables by name (substring match).")
 			s.String("database").
