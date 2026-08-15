@@ -99,7 +99,17 @@ func dbQueryTool(allowWrites bool) *server.ToolBuilder {
 
 func routesTool() *server.ToolBuilder {
 	return server.NewTool("velocity_routes",
-		"List registered routes by parsing route registration files. Returns method, path, handler, and middleware.")
+		"List registered routes. Returns method, path, handler, and middleware; "+
+			"the response header carries the total route count and the source (json|text|ast). "+
+			"Use filter/method/limit to trim large route tables instead of pulling all routes.").
+		WithSchema(func(s *schema.Object) {
+			s.String("filter").
+				Description("Case-insensitive substring match against route path, handler, or name.")
+			s.String("method").
+				Description("Only routes with this HTTP method (e.g. GET, POST).")
+			s.Integer("limit").
+				Description("Maximum number of routes to return. Default: all.").Min(1)
+		})
 }
 
 func searchDocsTool() *server.ToolBuilder {
