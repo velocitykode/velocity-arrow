@@ -303,6 +303,90 @@ func TestHandleLastError(t *testing.T) {
 	})
 }
 
+func TestHandleLastError_FindsErrorInOlderFile(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "storage", "logs")
+	os.MkdirAll(logDir, 0755)
+
+	// The newest file is clean; the error lives in an older file
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-02.log"), []byte(`[09:14:05] ERROR: Disk full | path=/var/data
+`), 0644)
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-14.log"), []byte(`[10:00:00] INFO: Server started on :4000
+[10:01:00] INFO: GET /dashboard | status=200
+`), 0644)
+
+	withWorkDir(t, dir, func() {
+		result, err := HandleLastError(context.Background(), makeRequest(nil))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := result.Contents()[0].(*content.Text).String()
+		if !strings.Contains(text, "Disk full") {
+			t.Errorf("should find the error in the older file, got: %s", text)
+		}
+		if !strings.Contains(text, "velocity-2026-08-02.log") {
+			t.Errorf("should report which file the error came from, got: %s", text)
+		}
+	})
+}
+
+func TestHandleLastError_NoErrorsAnywhere(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "storage", "logs")
+	os.MkdirAll(logDir, 0755)
+
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-02.log"), []byte(`[09:00:00] INFO: Server started on :4000
+`), 0644)
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-14.log"), []byte(`[10:00:00] INFO: GET /dashboard | status=200
+`), 0644)
+
+	withWorkDir(t, dir, func() {
+		result, _ := HandleLastError(context.Background(), makeRequest(nil))
+		text := result.Contents()[0].(*content.Text).String()
+		want := "No ERROR entries in 2 log files scanned (oldest: 2026-08-02)."
+		if text != want {
+			t.Errorf("not-found message = %q, want %q", text, want)
+		}
+	})
+}
+
+func TestHandleLastError_CountSpansFiles(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "storage", "logs")
+	os.MkdirAll(logDir, 0755)
+
+	// One error per file - count=2 must walk into the older file
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-02.log"), []byte(`[09:14:05] ERROR: Disk full | path=/var/data
+`), 0644)
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-08-14.log"), []byte(`[10:00:00] INFO: Server started on :4000
+[10:05:00] ERROR: Timeout | host=smtp:587
+`), 0644)
+
+	withWorkDir(t, dir, func() {
+		result, err := HandleLastError(context.Background(), makeRequest(map[string]any{
+			"count": float64(2),
+		}))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		text := result.Contents()[0].(*content.Text).String()
+		if !strings.Contains(text, "Last 2 Errors") {
+			t.Errorf("should report 2 errors, got: %s", text)
+		}
+		timeout := strings.Index(text, "Timeout")
+		diskFull := strings.Index(text, "Disk full")
+		if timeout == -1 || diskFull == -1 {
+			t.Fatalf("should include both errors, got: %s", text)
+		}
+		if timeout > diskFull {
+			t.Error("errors should be newest first")
+		}
+		if !strings.Contains(text, "velocity-2026-08-14.log") || !strings.Contains(text, "velocity-2026-08-02.log") {
+			t.Errorf("should attribute each error to its file, got: %s", text)
+		}
+	})
+}
+
 func TestHandleLastError_NoLogs(t *testing.T) {
 	dir := t.TempDir()
 	os.MkdirAll(filepath.Join(dir, "storage", "logs"), 0755)

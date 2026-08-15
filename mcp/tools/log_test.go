@@ -118,6 +118,83 @@ func TestFindLastError_IncludesStackTrace(t *testing.T) {
 	}
 }
 
+func TestFindErrors_NewestFirst(t *testing.T) {
+	content := `[09:12:03] INFO: Server started
+[09:14:05] ERROR: First error | id=1
+[09:15:30] INFO: Some info
+[09:16:01] ERROR: Second error | id=2
+[09:16:02] INFO: Shutdown`
+
+	errors := findErrors(content, 5)
+	if len(errors) != 2 {
+		t.Fatalf("errors count = %d, want 2", len(errors))
+	}
+	if errors[0] != "[09:16:01] ERROR: Second error | id=2" {
+		t.Errorf("errors[0] should be the newest, got: %q", errors[0])
+	}
+	if errors[1] != "[09:14:05] ERROR: First error | id=1" {
+		t.Errorf("errors[1] should be the older one, got: %q", errors[1])
+	}
+}
+
+func TestFindErrors_RespectsMax(t *testing.T) {
+	content := `[09:14:05] ERROR: First error | id=1
+[09:16:01] ERROR: Second error | id=2`
+
+	errors := findErrors(content, 1)
+	if len(errors) != 1 {
+		t.Fatalf("errors count = %d, want 1", len(errors))
+	}
+	if errors[0] != "[09:16:01] ERROR: Second error | id=2" {
+		t.Errorf("should return only the newest, got: %q", errors[0])
+	}
+}
+
+func TestFindLogFiles_NewestFirst(t *testing.T) {
+	dir := t.TempDir()
+	logDir := filepath.Join(dir, "storage", "logs")
+	os.MkdirAll(logDir, 0755)
+
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-01-01.log"), []byte("old"), 0644)
+	os.WriteFile(filepath.Join(logDir, "velocity-2026-04-08.log"), []byte("new"), 0644)
+
+	oldDir, _ := os.Getwd()
+	os.Chdir(dir)
+	defer os.Chdir(oldDir)
+
+	files, err := findLogFiles()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files count = %d, want 2", len(files))
+	}
+	if !strings.HasSuffix(files[0], "velocity-2026-04-08.log") {
+		t.Errorf("first file should be the newest, got %q", files[0])
+	}
+	if !strings.HasSuffix(files[1], "velocity-2026-01-01.log") {
+		t.Errorf("last file should be the oldest, got %q", files[1])
+	}
+}
+
+func TestLogFileDate(t *testing.T) {
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"storage/logs/velocity-2026-08-02.log", "2026-08-02"},
+		{"velocity-2026-01-01.log", "2026-01-01"},
+		{"storage/logs/velocity.log", "velocity.log"},
+	}
+
+	for _, tt := range tests {
+		got := logFileDate(tt.path)
+		if got != tt.want {
+			t.Errorf("logFileDate(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
 func TestFindLatestLogFile_FindsTodayFirst(t *testing.T) {
 	dir := t.TempDir()
 	logDir := filepath.Join(dir, "storage", "logs")

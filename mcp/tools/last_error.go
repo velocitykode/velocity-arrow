@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,28 +13,69 @@ import (
 	"github.com/velocitykode/velocity-mcp/server"
 )
 
-// HandleLastError returns the last ERROR entry from the Velocity log file.
+// HandleLastError returns the last N ERROR entries from the Velocity logs,
+// scanning log files newest-first until enough entries are found.
 func HandleLastError(ctx context.Context, req *server.Request) (*server.Response, error) {
-	logFile, err := findLatestLogFile()
+	count := 1
+	if v, ok := req.IntOK("count"); ok {
+		count = int(v)
+	}
+	if count <= 0 {
+		count = 1
+	}
+	if count > 10 {
+		count = 10
+	}
+
+	logFiles, err := findLogFiles()
 	if err != nil {
-		return server.Error(fmt.Sprintf("finding log file: %v", err)), nil
+		return server.Error(fmt.Sprintf("finding log files: %v", err)), nil
 	}
 
-	data, err := os.ReadFile(logFile)
-	if err != nil {
-		return server.Error(fmt.Sprintf("reading log file: %v", err)), nil
+	var found []logError
+	for _, logFile := range logFiles {
+		if len(found) >= count {
+			break
+		}
+		data, err := os.ReadFile(logFile)
+		if err != nil {
+			return server.Error(fmt.Sprintf("reading log file: %v", err)), nil
+		}
+		for _, entry := range findErrors(string(data), count-len(found)) {
+			found = append(found, logError{file: filepath.Base(logFile), entry: entry})
+		}
 	}
 
-	lastError := findLastError(string(data))
-	if lastError == "" {
-		return server.Text("No ERROR entries found in the log file."), nil
+	if len(found) == 0 {
+		oldest := logFileDate(logFiles[len(logFiles)-1])
+		files := "files"
+		if len(logFiles) == 1 {
+			files = "file"
+		}
+		return server.Text(fmt.Sprintf("No ERROR entries in %d log %s scanned (oldest: %s).", len(logFiles), files, oldest)), nil
 	}
 
-	if len(lastError) > 500 {
-		lastError = lastError[:500] + "...\n(truncated)"
+	var b strings.Builder
+	if len(found) == 1 {
+		b.WriteString("# Last Error\n")
+	} else {
+		b.WriteString(fmt.Sprintf("# Last %d Errors (newest first)\n", len(found)))
+	}
+	for _, e := range found {
+		entry := e.entry
+		if len(entry) > 500 {
+			entry = entry[:500] + "...\n(truncated)"
+		}
+		b.WriteString(fmt.Sprintf("\nFrom %s:\n\n```\n%s\n```\n", e.file, entry))
 	}
 
-	return server.Text(fmt.Sprintf("# Last Error\n\n```\n%s\n```", lastError)), nil
+	return server.Text(strings.TrimRight(b.String(), "\n")), nil
+}
+
+// logError is an ERROR entry paired with the log file it came from.
+type logError struct {
+	file  string
+	entry string
 }
 
 // logDir returns the log directory from Velocity's log config.
@@ -73,10 +115,51 @@ func findLatestLogFile() (string, error) {
 	return "", fmt.Errorf("no log files found in %s", dir)
 }
 
-func findLastError(content string) string {
-	lines := strings.Split(content, "\n")
+// findLogFiles returns all log files in the log directory, newest first.
+func findLogFiles() ([]string, error) {
+	dir := logDir()
 
-	for i := len(lines) - 1; i >= 0; i-- {
+	// Dated velocity-YYYY-MM-DD.log files sort newest-first lexically reversed
+	matches, _ := filepath.Glob(filepath.Join(dir, "velocity-*.log"))
+	if len(matches) > 0 {
+		sort.Sort(sort.Reverse(sort.StringSlice(matches)))
+		return matches, nil
+	}
+
+	// Fall back to a single velocity.log
+	singleLog := filepath.Join(dir, "velocity.log")
+	if _, err := os.Stat(singleLog); err == nil {
+		return []string{singleLog}, nil
+	}
+
+	return nil, fmt.Errorf("no log files found in %s", dir)
+}
+
+// logFileDate extracts the date from a velocity-YYYY-MM-DD.log filename,
+// falling back to the bare filename for undated logs.
+func logFileDate(path string) string {
+	name := filepath.Base(path)
+	date := strings.TrimSuffix(strings.TrimPrefix(name, "velocity-"), ".log")
+	if date == "" || date == name || strings.TrimSuffix(name, ".log") == "velocity" {
+		return name
+	}
+	return date
+}
+
+func findLastError(content string) string {
+	errors := findErrors(content, 1)
+	if len(errors) == 0 {
+		return ""
+	}
+	return errors[0]
+}
+
+// findErrors returns up to max ERROR entries from the log content, newest first.
+func findErrors(content string, max int) []string {
+	lines := strings.Split(content, "\n")
+	var errors []string
+
+	for i := len(lines) - 1; i >= 0 && len(errors) < max; i-- {
 		if isErrorLine(lines[i]) {
 			var entry []string
 			entry = append(entry, lines[i])
@@ -88,11 +171,11 @@ func findLastError(content string) string {
 				entry = append(entry, lines[j])
 			}
 
-			return strings.Join(entry, "\n")
+			errors = append(errors, strings.Join(entry, "\n"))
 		}
 	}
 
-	return ""
+	return errors
 }
 
 func isErrorLine(line string) bool {

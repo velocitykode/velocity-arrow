@@ -120,7 +120,11 @@ func searchDocsTool() *server.ToolBuilder {
 
 func lastErrorTool() *server.ToolBuilder {
 	return server.NewTool("velocity_last_error",
-		"Get the last ERROR entry from the application log file.")
+		"Get the last ERROR entries from the application logs, scanning log files newest-first.").
+		WithSchema(func(s *schema.Object) {
+			s.Number("count").
+				Description("Number of ERROR entries to return, newest first. Default: 1, max: 10.")
+		})
 }
 
 func logEntriesTool() *server.ToolBuilder {
