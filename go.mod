@@ -5,7 +5,7 @@ go 1.26.6
 require (
 	github.com/joho/godotenv v1.5.1
 	github.com/spf13/cobra v1.9.1
-	github.com/velocitykode/velocity v0.76.0
+	github.com/velocitykode/velocity v0.76.1
 	github.com/velocitykode/velocity-mcp v0.11.1
 )
 
