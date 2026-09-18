@@ -280,6 +280,9 @@ func TestHandleRoutes_EmptyProject(t *testing.T) {
 // --- velocity_search_docs (snapshot-backed) ---
 
 func TestHandleSearchDocs_FindsAsyncPage(t *testing.T) {
+	if os.Getenv("ARROW_DOCS_ROOT") == "" {
+		t.Skip("set ARROW_DOCS_ROOT to the velocity-docs content tree to build a knowledge base with doc pages")
+	}
 	handler := NewSearchDocsHandler(openKBStore(t))
 	result, err := handler(context.Background(), makeRequest(map[string]any{
 		"queries": []any{"how does async work"},

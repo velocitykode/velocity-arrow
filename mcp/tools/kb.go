@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/kbsource"
 	"github.com/velocitykode/velocity-arrow/internal/store"
 	"github.com/velocitykode/velocity-mcp/server"
 )
@@ -16,7 +17,7 @@ const kbDefaultLimit = 5
 
 // NewKBSearchHandler builds the velocity_kb_search handler: hybrid keyword plus semantic
 // retrieval over the whole knowledge-base snapshot for an intent query.
-func NewKBSearchHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
+func NewKBSearchHandler(s *store.Store, status kbsource.Status) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
 		limit := int(req.Int("limit"))
 		if limit <= 0 {
@@ -30,29 +31,29 @@ func NewKBSearchHandler(s *store.Store) func(context.Context, *server.Request) (
 			return server.Text("No matching entries in the knowledge base. " +
 				"Absence here does NOT mean the framework lacks it; verify against source."), nil
 		}
-		return server.Text(formatKBResults(results)), nil
+		return server.Text(withNudge(status, formatKBResults(results))), nil
 	}
 }
 
 // NewKBSymbolHandler builds the velocity_kb_symbol handler: exact API lookup that grounds
 // a signature instead of letting the caller guess one.
-func NewKBSymbolHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
+func NewKBSymbolHandler(s *store.Store, status kbsource.Status) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
 		entries, err := s.Symbol(ctx, req.String("name"))
 		if err != nil {
 			return server.Error(fmt.Sprintf("symbol lookup failed: %v", err)), nil
 		}
 		if len(entries) == 0 {
-			return server.Text("No such symbol in the knowledge base. " +
-				"Absence here does NOT mean it is absent from the framework; verify against source."), nil
+			return server.Text(withNudge(status, fmt.Sprintf("No such symbol in velocity %s, the version this app pins. "+
+				"If it is new, it arrives when the app bumps; verify against source if in doubt.", status.Pin.Version))), nil
 		}
-		return server.Text(formatKBEntries(entries)), nil
+		return server.Text(withNudge(status, formatKBEntries(entries))), nil
 	}
 }
 
 // NewKBGuardHandler builds the velocity_kb_guard handler: curated negative knowledge for
 // a topic or package, the "use velocity X not stdlib Y" map and known gotchas.
-func NewKBGuardHandler(s *store.Store) func(context.Context, *server.Request) (*server.Response, error) {
+func NewKBGuardHandler(s *store.Store, status kbsource.Status) func(context.Context, *server.Request) (*server.Response, error) {
 	return func(ctx context.Context, req *server.Request) (*server.Response, error) {
 		entries, err := s.Guards(ctx, req.String("topic"))
 		if err != nil {
@@ -61,7 +62,7 @@ func NewKBGuardHandler(s *store.Store) func(context.Context, *server.Request) (*
 		if len(entries) == 0 {
 			return server.Text("No guards recorded for that topic."), nil
 		}
-		return server.Text(formatKBEntries(entries)), nil
+		return server.Text(withNudge(status, formatKBEntries(entries))), nil
 	}
 }
 
@@ -114,4 +115,15 @@ func writeKBCard(b *strings.Builder, e *kb.Entry) {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n")
+}
+
+// withNudge prefixes an answer with the framework-movement line when the
+// latest velocity differs from the app's pin, so the agent can relay whether a
+// bump is safe without a second lookup.
+func withNudge(status kbsource.Status, body string) string {
+	n := status.Nudge()
+	if n == "" {
+		return body
+	}
+	return "> " + n + "\n\n" + body
 }

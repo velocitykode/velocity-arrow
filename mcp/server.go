@@ -3,9 +3,11 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/velocitykode/velocity-arrow/internal/embed"
 	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/kbsource"
 	"github.com/velocitykode/velocity-arrow/internal/store"
 	"github.com/velocitykode/velocity-arrow/mcp/tools"
 	"github.com/velocitykode/velocity-mcp/schema"
@@ -20,8 +22,9 @@ const instructions = "Velocity framework MCP server. Provides tools for app intr
 	"access, route listing, documentation search, log reading, and configuration inspection. " +
 	"It also guards the velocity framework knowledge base: call velocity_kb_guard before writing code in an " +
 	"unfamiliar area, velocity_kb_symbol to verify an exact signature, and velocity_kb_search for intent lookups. " +
-	"A miss means 'not in this KB', not 'not in the framework'. The knowledge base is a baked, " +
-	"version-stamped snapshot of velocity core; read the kb://manifest resource for its coverage boundary."
+	"The knowledge base describes the velocity version this app compiles against (its go.mod pin), so a " +
+	"symbol miss means the API does not exist at that version. Answers carry one line when a newer velocity " +
+	"is available and whether bumping is safe; read kb://manifest for the version, source and gap."
 
 // Serve starts the MCP server on stdio transport. When allowWrites is true
 // the velocity_db_query tool accepts non-read-only SQL (INSERT/UPDATE/DELETE
@@ -29,26 +32,75 @@ const instructions = "Velocity framework MCP server. Provides tools for app intr
 func Serve(allowWrites bool) error {
 	ctx := context.Background()
 
-	kbStore, err := store.Open(ctx, kb.SnapshotDB, embed.New())
+	kbStore, status, err := openKnowledgeBase(ctx)
 	if err != nil {
-		return fmt.Errorf("opening knowledge-base snapshot: %w", err)
+		return err
 	}
 	defer kbStore.Close()
 
-	return transport.ServeStdio(ctx, newServer(allowWrites, kbStore))
+	return transport.ServeStdio(ctx, newServer(allowWrites, kbStore, status))
 }
 
-func newServer(allowWrites bool, kbStore *store.Store) *server.Server {
+// openKnowledgeBase serves the knowledge base for the velocity version the
+// current directory's module pins (latest when there is none): cached,
+// downloaded from the release asset, or built from the module source. It then
+// compares the pin with the latest release so answers can say how far the
+// framework has moved.
+func openKnowledgeBase(ctx context.Context) (*store.Store, kbsource.Status, error) {
+	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, "arrow: "+format+"\n", args...) }
+	opts := kbsource.Options{BaseURL: os.Getenv("ARROW_KB_BASE_URL"), Logf: logf}
+
+	cwd, _ := os.Getwd()
+	pin, err := kbsource.ResolvePin(ctx, cwd)
+	if err != nil {
+		return nil, kbsource.Status{}, err
+	}
+	snap, err := kbsource.Ensure(ctx, pin, opts)
+	if err != nil {
+		return nil, kbsource.Status{}, err
+	}
+	kbStore, err := store.OpenPath(ctx, snap.Path, embed.New())
+	if err != nil {
+		return nil, kbsource.Status{}, fmt.Errorf("opening knowledge base %s: %w", snap.Path, err)
+	}
+	status := kbsource.Status{Pin: pin, Snapshot: snap, Gap: kbsource.Gap{Kind: "unknown"}}
+	logf("kb: velocity %s (%s, %s)", pin.Version, pin.Origin, snap.Source)
+
+	latest, err := kbsource.Latest(ctx)
+	if err != nil {
+		logf("kb: latest velocity unknown: %v", err)
+		return kbStore, status, nil
+	}
+	if latest.Version == pin.Version {
+		status.Gap = kbsource.Classify(pin.Version, latest.Version, nil, nil)
+		return kbStore, status, nil
+	}
+	lsnap, err := kbsource.Ensure(ctx, latest, opts)
+	if err != nil {
+		logf("kb: latest snapshot unavailable: %v", err)
+		return kbStore, status, nil
+	}
+	lstore, err := store.OpenPath(ctx, lsnap.Path, embed.New())
+	if err != nil {
+		return kbStore, status, nil
+	}
+	status.Gap = kbsource.Classify(pin.Version, latest.Version, kbStore.SymbolTitles(), lstore.SymbolTitles())
+	_ = lstore.Close()
+	logf("kb: latest velocity %s, gap %s", latest.Version, status.Gap.Kind)
+	return kbStore, status, nil
+}
+
+func newServer(allowWrites bool, kbStore *store.Store, status kbsource.Status) *server.Server {
 	return server.New(
 		"velocity-arrow",
 		"0.1.0",
 		server.WithInstructions(instructions),
-		server.WithTools(registeredTools(allowWrites, kbStore)...),
-		server.WithResources(tools.NewKBManifestResource(kbStore)),
+		server.WithTools(registeredTools(allowWrites, kbStore, status)...),
+		server.WithResources(tools.NewKBManifestResource(kbStore, status)),
 	)
 }
 
-func registeredTools(allowWrites bool, kbStore *store.Store) []server.Tool {
+func registeredTools(allowWrites bool, kbStore *store.Store, status kbsource.Status) []server.Tool {
 	return []server.Tool{
 		appInfoTool().HandleFunc(tools.HandleAppInfo),
 		dbSchemaTool().HandleFunc(tools.HandleDBSchema),
@@ -58,9 +110,9 @@ func registeredTools(allowWrites bool, kbStore *store.Store) []server.Tool {
 		lastErrorTool().HandleFunc(tools.HandleLastError),
 		logEntriesTool().HandleFunc(tools.HandleLogEntries),
 		configTool().HandleFunc(tools.HandleConfig),
-		kbSearchTool().HandleFunc(tools.NewKBSearchHandler(kbStore)),
-		kbSymbolTool().HandleFunc(tools.NewKBSymbolHandler(kbStore)),
-		kbGuardTool().HandleFunc(tools.NewKBGuardHandler(kbStore)),
+		kbSearchTool().HandleFunc(tools.NewKBSearchHandler(kbStore, status)),
+		kbSymbolTool().HandleFunc(tools.NewKBSymbolHandler(kbStore, status)),
+		kbGuardTool().HandleFunc(tools.NewKBGuardHandler(kbStore, status)),
 	}
 }
 

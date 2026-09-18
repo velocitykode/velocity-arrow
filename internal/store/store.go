@@ -43,10 +43,9 @@ type Store struct {
 	byID     map[int64]int // entry id -> index into entries
 }
 
-// Open opens a read-only knowledge base from the bytes of a baked snapshot. The
-// embedder is used only to vectorise queries at search time; pass embed.Noop()
-// for keyword-only retrieval. The snapshot bytes are written to a temp file
-// (the sqlite driver opens a path, not bytes) that Close removes.
+// Open opens a read-only knowledge base from snapshot bytes. The bytes are
+// written to a private temp file (the sqlite driver opens a path) that Close
+// removes. Prefer OpenPath for a snapshot that already lives on disk.
 func Open(ctx context.Context, snapshot []byte, emb embed.Embedder) (*Store, error) {
 	if len(snapshot) == 0 {
 		return nil, fmt.Errorf("store: empty snapshot")
@@ -65,13 +64,33 @@ func Open(ctx context.Context, snapshot []byte, emb embed.Embedder) (*Store, err
 		_ = os.RemoveAll(tmpDir)
 		return nil, fmt.Errorf("store: write snapshot temp file: %w", err)
 	}
-
-	db, err := orm.NewManagerWithContext(ctx, orm.ManagerConfig{
-		Driver:   snapshotDriver,
-		Database: tmpPath,
-	})
+	s, err := openPath(ctx, tmpPath, tmpDir, emb)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
+		return nil, err
+	}
+	return s, nil
+}
+
+// OpenPath opens a read-only knowledge base from a snapshot file in place,
+// typically one in the kb cache. Close leaves the file where it is.
+func OpenPath(ctx context.Context, path string, emb embed.Embedder) (*Store, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("store: snapshot: %w", err)
+	}
+	if st.Size() == 0 {
+		return nil, fmt.Errorf("store: empty snapshot %s", path)
+	}
+	return openPath(ctx, path, "", emb)
+}
+
+func openPath(ctx context.Context, path, tmpDir string, emb embed.Embedder) (*Store, error) {
+	db, err := orm.NewManagerWithContext(ctx, orm.ManagerConfig{
+		Driver:   snapshotDriver,
+		Database: path,
+	})
+	if err != nil {
 		return nil, fmt.Errorf("store: open snapshot: %w", err)
 	}
 
@@ -84,10 +103,20 @@ func Open(ctx context.Context, snapshot []byte, emb embed.Embedder) (*Store, err
 
 	if err := s.load(ctx); err != nil {
 		_ = db.Shutdown(ctx)
-		_ = os.RemoveAll(tmpDir)
 		return nil, err
 	}
 	return s, nil
+}
+
+// SymbolTitles lists every symbol entry's title, for diffing two versions.
+func (s *Store) SymbolTitles() []string {
+	out := make([]string, 0, len(s.entries))
+	for i := range s.entries {
+		if s.entries[i].Kind == kb.KindSymbol {
+			out = append(out, s.entries[i].Title)
+		}
+	}
+	return out
 }
 
 // load reads every entry and the manifest into memory. A failure here means the

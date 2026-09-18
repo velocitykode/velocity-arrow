@@ -2,11 +2,12 @@ package mcp
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/velocitykode/velocity-arrow/internal/embed"
-	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/kbsource"
 	"github.com/velocitykode/velocity-arrow/internal/store"
 	"github.com/velocitykode/velocity-arrow/mcp/tools"
 	"github.com/velocitykode/velocity-mcp/schema"
@@ -16,7 +17,11 @@ import (
 // openKB opens the embedded knowledge-base snapshot the server serves.
 func openKB(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(context.Background(), kb.SnapshotDB, embed.New())
+	snap, err := kbsource.Ensure(context.Background(), mustPin(t), kbsource.Options{BaseURL: "-", DocsRoot: os.Getenv("ARROW_DOCS_ROOT")})
+	if err != nil {
+		t.Fatalf("ensuring knowledge base: %v", err)
+	}
+	s, err := store.OpenPath(context.Background(), snap.Path, embed.New())
 	if err != nil {
 		t.Fatalf("opening knowledge-base snapshot: %v", err)
 	}
@@ -139,7 +144,7 @@ func TestToolDefinitions_NamesAndSchemas(t *testing.T) {
 }
 
 func TestRegisterTools_AllRegistered(t *testing.T) {
-	s := newServer(false, openKB(t))
+	s := newServer(false, openKB(t), kbsource.Status{})
 
 	// Verify all project tools plus the knowledge-base tools are registered
 	expectedNames := []string{
@@ -168,7 +173,7 @@ func TestRegisterTools_AllRegistered(t *testing.T) {
 }
 
 func TestNewServer_KnowledgeBaseSurface(t *testing.T) {
-	s := newServer(false, openKB(t))
+	s := newServer(false, openKB(t), kbsource.Status{})
 
 	resources := s.Resources()
 	if len(resources) != 1 {
@@ -183,4 +188,15 @@ func TestNewServer_KnowledgeBaseSurface(t *testing.T) {
 			t.Errorf("server instructions do not mention %q", want)
 		}
 	}
+}
+
+// mustPin resolves the velocity version this module pins, so tests exercise a
+// knowledge base built for the framework arrow itself compiles against.
+func mustPin(t *testing.T) kbsource.Pin {
+	t.Helper()
+	pin, err := kbsource.ResolvePin(context.Background(), ".")
+	if err != nil {
+		t.Fatalf("resolving velocity pin: %v", err)
+	}
+	return pin
 }

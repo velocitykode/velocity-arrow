@@ -3,11 +3,13 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/velocitykode/velocity-arrow/internal/embed"
 	"github.com/velocitykode/velocity-arrow/internal/kb"
+	"github.com/velocitykode/velocity-arrow/internal/kbsource"
 	"github.com/velocitykode/velocity-arrow/internal/store"
 	"github.com/velocitykode/velocity-mcp/content"
 	"github.com/velocitykode/velocity-mcp/server"
@@ -17,7 +19,11 @@ import (
 // serves, so these tests exercise the real corpus rather than a fixture.
 func openKBStore(t *testing.T) *store.Store {
 	t.Helper()
-	s, err := store.Open(context.Background(), kb.SnapshotDB, embed.New())
+	snap, err := kbsource.Ensure(context.Background(), mustPin(t), kbsource.Options{BaseURL: "-", DocsRoot: os.Getenv("ARROW_DOCS_ROOT")})
+	if err != nil {
+		t.Fatalf("ensuring knowledge base: %v", err)
+	}
+	s, err := store.OpenPath(context.Background(), snap.Path, embed.New())
 	if err != nil {
 		t.Fatalf("opening knowledge-base snapshot: %v", err)
 	}
@@ -36,49 +42,49 @@ func TestKBHandlers(t *testing.T) {
 	}{
 		{
 			name:         "velocity_kb_search finds the hashing surface",
-			handler:      NewKBSearchHandler(s),
+			handler:      NewKBSearchHandler(s, kbsource.Status{}),
 			args:         map[string]any{"query": "hash a password"},
 			wantContains: []string{"[symbol]", "Hasher", "auth"},
 		},
 		{
 			name:         "velocity_kb_search honors the kind filter",
-			handler:      NewKBSearchHandler(s),
+			handler:      NewKBSearchHandler(s, kbsource.Status{}),
 			args:         map[string]any{"query": "password", "kind": string(kb.KindSymbol), "limit": 3},
 			wantContains: []string{"[symbol]"},
 		},
 		{
 			name:         "velocity_kb_search miss stays explicit about the boundary",
-			handler:      NewKBSearchHandler(s),
+			handler:      NewKBSearchHandler(s, kbsource.Status{}),
 			args:         map[string]any{"query": "zzqqxx-not-a-framework-thing"},
 			wantContains: []string{"Absence here does NOT mean"},
 		},
 		{
 			name:         "velocity_kb_symbol returns the exact signature",
-			handler:      NewKBSymbolHandler(s),
+			handler:      NewKBSymbolHandler(s, kbsource.Status{}),
 			args:         map[string]any{"name": "Hasher"},
 			wantContains: []string{"type Hasher interface", "ref: auth/hasher.go"},
 		},
 		{
 			name:         "velocity_kb_symbol miss stays explicit about the boundary",
-			handler:      NewKBSymbolHandler(s),
+			handler:      NewKBSymbolHandler(s, kbsource.Status{}),
 			args:         map[string]any{"name": "NoSuchSymbolInVelocity"},
-			wantContains: []string{"No such symbol in the knowledge base"},
+			wantContains: []string{"No such symbol in velocity"},
 		},
 		{
 			name:         "velocity_kb_guard returns curated rules for a topic",
-			handler:      NewKBGuardHandler(s),
+			handler:      NewKBGuardHandler(s, kbsource.Status{}),
 			args:         map[string]any{"topic": "logging"},
 			wantContains: []string{"[rule]", "STDOUT"},
 		},
 		{
 			name:         "velocity_kb_guard with no topic returns the highest-signal guards",
-			handler:      NewKBGuardHandler(s),
+			handler:      NewKBGuardHandler(s, kbsource.Status{}),
 			args:         map[string]any{},
 			wantContains: []string{"[rule]"},
 		},
 		{
 			name:         "velocity_kb_guard unknown topic reports no guards",
-			handler:      NewKBGuardHandler(s),
+			handler:      NewKBGuardHandler(s, kbsource.Status{}),
 			args:         map[string]any{"topic": "zzqqxx"},
 			wantContains: []string{"No guards recorded"},
 		},
@@ -106,7 +112,7 @@ func TestKBHandlers(t *testing.T) {
 
 func TestKBManifestResource(t *testing.T) {
 	s := openKBStore(t)
-	res := NewKBManifestResource(s)
+	res := NewKBManifestResource(s, kbsource.Status{})
 
 	if res.URI() != KBManifestURI {
 		t.Errorf("URI = %q, want %q", res.URI(), KBManifestURI)
@@ -140,4 +146,15 @@ func TestKBManifestResource(t *testing.T) {
 	if m.Counts[kb.KindSymbol] == 0 {
 		t.Error("manifest reports no symbol entries")
 	}
+}
+
+// mustPin resolves the velocity version this module pins, so tests exercise a
+// knowledge base built for the framework arrow itself compiles against.
+func mustPin(t *testing.T) kbsource.Pin {
+	t.Helper()
+	pin, err := kbsource.ResolvePin(context.Background(), ".")
+	if err != nil {
+		t.Fatalf("resolving velocity pin: %v", err)
+	}
+	return pin
 }

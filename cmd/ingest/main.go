@@ -1,169 +1,67 @@
-// Command ingest builds the baked knowledge-base snapshot that arrow embeds: it
-// parses exact symbols from the velocity source tree, loads curated guard rules
-// and recipes, embeds each entry, and writes internal/kb/data/velocity-kb.db.
-// Run it when velocity bumps or the rules change, then commit the regenerated
-// snapshot.
+// Command ingest builds a knowledge-base snapshot for one velocity version: it
+// parses exact symbols from the framework source, loads the curated guard
+// rules, adds the published docs pages, and writes a SQLite file. The release
+// pipeline runs it per framework release and publishes the file as that
+// release's asset; arrow downloads it on demand (see internal/kbsource).
+// Nothing is committed or embedded.
 //
 // Usage:
 //
-//	go run ./cmd/ingest -velocity ~/code/velocity -version v0.73.0 \
-//	    -docs ~/code/velocity-docs/content/docs
+//	go run ./cmd/ingest -velocity "$(go list -m -f '{{.Dir}}' github.com/velocitykode/velocity)" \
+//	    -version v0.81.1 -docs ~/code/velocity-docs/content/docs -out velocity-kb.db
 //
 // -docs points at the Hugo content tree of the published docs site (vel.build);
-// its pages land as doc-kind entries served by velocity_search_docs. Omitting it
-// builds a snapshot without documentation pages.
-//
-// Embeddings require a configured backend (see internal/embed). With none, the
-// snapshot is built keyword-only and the server still serves FTS5 results.
+// omit it to build symbols and rules only. SOURCE_DATE_EPOCH, when set, is the
+// manifest timestamp so identical inputs give an identical file.
 package main
 
 import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
-	"github.com/velocitykode/velocity-arrow/internal/corpus"
-	"github.com/velocitykode/velocity-arrow/internal/embed"
-	"github.com/velocitykode/velocity-arrow/internal/kb"
-	"github.com/velocitykode/velocity-arrow/internal/store"
+	"github.com/velocitykode/velocity-arrow/internal/kbsource"
 )
-
-const embedBatch = 64
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "ingest: %v\n", err)
+		fmt.Fprintln(os.Stderr, "ingest:", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	defaultRoot := os.Getenv("VELOCITY_SRC")
-	if defaultRoot == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			defaultRoot = filepath.Join(home, "code", "velocity")
-		}
-	}
-	root := flag.String("velocity", defaultRoot, "path to the velocity source tree")
+	root := flag.String("velocity", os.Getenv("VELOCITY_SRC"), "path to the velocity source tree (default $VELOCITY_SRC)")
 	version := flag.String("version", "dev", "velocity version stamp for entries and manifest")
-	out := flag.String("out", filepath.Join("internal", "kb", "data", "velocity-kb.db"), "output snapshot path")
+	out := flag.String("out", "velocity-kb.db", "output snapshot path")
 	docsRoot := flag.String("docs", "", "path to the published docs content tree (e.g. ~/code/velocity-docs/content/docs); empty skips doc pages")
 	flag.Parse()
 
-	ctx := context.Background()
-
-	rulesDir, err := fs.Sub(kb.RulesFS, "rules")
-	if err != nil {
-		return fmt.Errorf("open rules: %w", err)
+	if *root == "" {
+		return fmt.Errorf("-velocity is required (or set VELOCITY_SRC)")
 	}
-
-	var entries []kb.Entry
-
-	syms, err := corpus.Symbols(ctx, *root, *version)
-	if err != nil {
-		return fmt.Errorf("symbols: %w", err)
-	}
-	entries = append(entries, syms...)
-
-	curated, err := corpus.Markdown(rulesDir, *version)
-	if err != nil {
-		return fmt.Errorf("markdown: %w", err)
-	}
-	entries = append(entries, curated...)
-
-	if *docsRoot == "" {
-		fmt.Fprintln(os.Stderr, "ingest: no -docs path; snapshot will have no documentation pages")
-	} else {
-		pages, derr := corpus.Docs(os.DirFS(*docsRoot), *version)
-		if derr != nil {
-			return fmt.Errorf("docs: %w", derr)
-		}
-		if len(pages) == 0 {
-			return fmt.Errorf("docs: no pages found under %q; check the path", *docsRoot)
-		}
-		entries = append(entries, pages...)
-	}
-
-	if len(entries) == 0 {
-		return fmt.Errorf("no entries gathered; check -velocity path %q", *root)
-	}
-
-	embedEntries(ctx, embed.New(), entries)
-
-	w, err := store.Create(ctx, *out)
-	if err != nil {
-		return fmt.Errorf("create snapshot: %w", err)
-	}
-	defer w.Close()
-
 	builtAt, err := buildTimestamp()
 	if err != nil {
 		return err
 	}
-
-	manifest := kb.Manifest{
-		VelocityVersion: *version,
-		BuiltAt:         builtAt.Format(time.RFC3339),
-		Counts:          map[kb.Kind]int{},
-	}
-	seenPkg := map[string]bool{}
-	for i := range entries {
-		if err := w.Insert(ctx, entries[i]); err != nil {
-			return fmt.Errorf("insert %q: %w", entries[i].Title, err)
-		}
-		manifest.Counts[entries[i].Kind]++
-		manifest.Total++
-		if p := entries[i].Package; p != "" && !seenPkg[p] {
-			seenPkg[p] = true
-			manifest.Packages = append(manifest.Packages, p)
-		}
+	if *docsRoot == "" {
+		fmt.Fprintln(os.Stderr, "ingest: no -docs path; snapshot will have no documentation pages")
 	}
 
-	if err := w.Finalize(ctx, manifest); err != nil {
-		return fmt.Errorf("finalize: %w", err)
+	in := kbsource.BuildInput{VelocityDir: *root, Version: *version, DocsRoot: *docsRoot, BuiltAt: builtAt, Out: *out}
+	if err := kbsource.Build(context.Background(), in); err != nil {
+		return err
 	}
-
-	fmt.Fprintf(os.Stderr, "ingest: wrote %d entries to %s (velocity %s)\n", manifest.Total, *out, *version)
+	fmt.Fprintf(os.Stderr, "ingest: wrote %s (velocity %s)\n", *out, *version)
 	return nil
 }
 
-// embedEntries fills Embedding on each entry in batches. When no backend is
-// available it logs and leaves embeddings nil, yielding a keyword-only snapshot.
-func embedEntries(ctx context.Context, emb embed.Embedder, entries []kb.Entry) {
-	for start := 0; start < len(entries); start += embedBatch {
-		end := min(start+embedBatch, len(entries))
-		texts := make([]string, 0, end-start)
-		for i := start; i < end; i++ {
-			texts = append(texts, embedText(entries[i]))
-		}
-		vecs, err := emb.Embed(ctx, texts)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "ingest: embeddings unavailable (%v); building keyword-only\n", err)
-			return
-		}
-		for i, v := range vecs {
-			entries[start+i].Embedding = v
-		}
-	}
-}
-
-// embedText is the text vectorised for an entry: headline plus body.
-func embedText(e kb.Entry) string {
-	if e.Body == "" {
-		return e.Title
-	}
-	return e.Title + "\n" + e.Body
-}
-
-// buildTimestamp is the manifest's BuiltAt. It honours SOURCE_DATE_EPOCH (the
-// reproducible-builds convention) so two ingests of the same inputs produce an
-// identical snapshot; the release workflow sets it to the velocity module's
-// publish time. Unset, it falls back to now.
+// buildTimestamp honours SOURCE_DATE_EPOCH (the reproducible-builds convention)
+// so two ingests of the same inputs produce an identical snapshot. Unset, it
+// falls back to now.
 func buildTimestamp() (time.Time, error) {
 	raw := os.Getenv("SOURCE_DATE_EPOCH")
 	if raw == "" {
