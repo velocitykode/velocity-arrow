@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"go/ast"
+	"go/build"
 	"go/doc"
 	"go/parser"
 	"go/printer"
@@ -11,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/velocitykode/velocity-arrow/internal/kb"
@@ -124,6 +126,14 @@ func (w *symbolWalk) collectDir(dir string) {
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		// Honour build constraints for the reference platform. Without this
+		// a symbol defined once per GOOS (file_lock.go and
+		// file_lock_windows.go) is extracted twice and go/doc keeps whichever
+		// arrives first, which made consecutive builds of the same source
+		// differ. The snapshot describes the linux/amd64 surface.
+		if ok, merr := snapshotBuildContext.MatchFile(dir, name); merr != nil || !ok {
+			continue
+		}
 		f, perr := parser.ParseFile(fset, filepath.Join(dir, name), nil, parser.ParseComments)
 		if perr != nil || f == nil {
 			continue
@@ -144,14 +154,31 @@ func (w *symbolWalk) collectDir(dir string) {
 	}
 	pkgPath := filepath.ToSlash(rel)
 
-	for name, files := range byPkg {
+	// Iterate in a fixed order so the snapshot is byte-for-byte reproducible.
+	names := make([]string, 0, len(byPkg))
+	for name := range byPkg {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
 		// Skip any *_test external test package.
 		if strings.HasSuffix(name, "_test") {
 			continue
 		}
-		w.collectPackage(fset, files, pkgPath)
+		w.collectPackage(fset, byPkg[name], pkgPath)
 	}
 }
+
+// snapshotBuildContext is the platform the knowledge base describes. Fixed
+// rather than build.Default so a snapshot built on macOS matches one built in
+// CI on linux.
+var snapshotBuildContext = func() build.Context {
+	c := build.Default
+	c.GOOS = "linux"
+	c.GOARCH = "amd64"
+	c.CgoEnabled = false
+	return c
+}()
 
 // collectPackage extracts exported funcs, methods and types from one package's
 // parsed files. go/doc surfaces only exported objects in default mode and gives

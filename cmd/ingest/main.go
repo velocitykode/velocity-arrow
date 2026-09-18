@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/velocitykode/velocity-arrow/internal/corpus"
@@ -100,9 +101,14 @@ func run() error {
 	}
 	defer w.Close()
 
+	builtAt, err := buildTimestamp()
+	if err != nil {
+		return err
+	}
+
 	manifest := kb.Manifest{
 		VelocityVersion: *version,
-		BuiltAt:         time.Now().UTC().Format(time.RFC3339),
+		BuiltAt:         builtAt.Format(time.RFC3339),
 		Counts:          map[kb.Kind]int{},
 	}
 	seenPkg := map[string]bool{}
@@ -152,4 +158,20 @@ func embedText(e kb.Entry) string {
 		return e.Title
 	}
 	return e.Title + "\n" + e.Body
+}
+
+// buildTimestamp is the manifest's BuiltAt. It honours SOURCE_DATE_EPOCH (the
+// reproducible-builds convention) so two ingests of the same inputs produce an
+// identical snapshot; the release workflow sets it to the velocity module's
+// publish time. Unset, it falls back to now.
+func buildTimestamp() (time.Time, error) {
+	raw := os.Getenv("SOURCE_DATE_EPOCH")
+	if raw == "" {
+		return time.Now().UTC(), nil
+	}
+	secs, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("SOURCE_DATE_EPOCH %q: %w", raw, err)
+	}
+	return time.Unix(secs, 0).UTC(), nil
 }

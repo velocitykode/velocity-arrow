@@ -54,6 +54,37 @@ jobs:
             git push
           fi
 
+      - name: Rebuild knowledge base
+        # The snapshot arrow embeds must describe the velocity go.mod pins.
+        # Sources: the pinned module from the module cache (exact tagged tree,
+        # no clone, no token) and the public docs repo. SOURCE_DATE_EPOCH is
+        # the module's publish time so the build is reproducible: an unchanged
+        # framework and docs yield a byte-identical file and this step stays a
+        # no-op. A changed snapshot is committed like the dependency bump, so
+        # the tag below always carries a knowledge base that matches its pin.
+        run: |
+          go mod download github.com/velocitykode/velocity
+          VEL_VERSION=$(go list -m -f '{{.Version}}' github.com/velocitykode/velocity)
+          VEL_SRC=$(go list -m -f '{{.Dir}}' github.com/velocitykode/velocity)
+          VEL_EPOCH=$(go list -m -f '{{.Time.Unix}}' github.com/velocitykode/velocity)
+
+          git clone --quiet --depth 1 https://github.com/velocitykode/velocity-docs.git "$RUNNER_TEMP/velocity-docs"
+
+          SOURCE_DATE_EPOCH="$VEL_EPOCH" go run ./cmd/ingest \
+            -velocity "$VEL_SRC" \
+            -version "$VEL_VERSION" \
+            -docs "$RUNNER_TEMP/velocity-docs/content/docs"
+
+          if git diff --quiet -- internal/kb/data/velocity-kb.db; then
+            echo "knowledge base already current for velocity $VEL_VERSION"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add internal/kb/data/velocity-kb.db
+            git commit -m "chore: rebuild knowledge base for velocity $VEL_VERSION [skip ci]"
+            git push
+          fi
+
       - name: Calculate version
         id: version
         run: |

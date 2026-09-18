@@ -70,25 +70,32 @@ migrations intend, and expect `velocity_log_entries` to find nothing while
 
 The knowledge base ships as a SQLite snapshot embedded in the binary
 (`internal/kb/data/velocity-kb.db`), so it goes stale the moment Velocity
-renames something. Rebuild it against a specific framework checkout:
+renames something.
+
+**Releases rebake it for you.** The Auto Release workflow rebuilds the
+snapshot on every run from the velocity version `go.mod` pins (read from the
+module cache) and the current `velocity-docs` content, and commits the
+regenerated file when it changed. A velocity release dispatches that workflow,
+so a framework bump and its knowledge base land in the same arrow tag. The
+build is reproducible (`SOURCE_DATE_EPOCH` is the module's publish time), and
+`TestKBSnapshotMatchesPinnedVelocity` fails the suite if the embedded
+snapshot's version ever drifts from the pin.
+
+To rebake by hand, for example while iterating on the ingester or the rules,
+point it at the pinned module so the stamp and the source agree:
 
 ```bash
-go run ./cmd/ingest -velocity ~/code/velocity -version v0.73.0
+VEL=$(go list -m -f '{{.Dir}}' github.com/velocitykode/velocity)
+VER=$(go list -m -f '{{.Version}}' github.com/velocitykode/velocity)
+go run ./cmd/ingest -velocity "$VEL" -version "$VER" -docs ~/code/velocity-docs/content/docs
 ```
-
-`-velocity` is the source tree to parse and `-version` is the stamp written
-into every entry and into `kb://manifest`. **Nothing checks that the two
-agree** - bake from a clean checkout of the tag you are stamping (a
-`git worktree` of it, not a dirty working tree) or the snapshot will lie about
-its own version.
 
 Symbols come from the source tree, but guard rules do not: they are curated
 markdown in `internal/kb/rules/*.md`. A rename that needs new guidance needs a
 rule file written by hand; rebaking alone will not produce one.
 
-Then commit the regenerated `.db` and reinstall, because the snapshot is
-compiled in - a running server keeps serving the old one until its binary is
-replaced:
+The snapshot is compiled in, so a running server keeps serving the old one
+until its binary is replaced:
 
 ```bash
 go install ./cmd/arrow   # then restart the MCP server in your client
