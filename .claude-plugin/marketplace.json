@@ -1,0 +1,15 @@
+{
+  "name": "velocitykode",
+  "description": "First-party agent plugins for the Velocity framework.",
+  "owner": {
+    "name": "VelocityKode",
+    "email": "ali@velocitykode.com"
+  },
+  "plugins": [
+    {
+      "name": "arrow",
+      "source": "./plugin",
+      "description": "Velocity-native rules, skills and the arrow MCP server."
+    }
+  ]
+}

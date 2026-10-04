@@ -1,0 +1,32 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "arrow",
+  "version": "0.1.0",
+  "description": "Makes your coding agent a Velocity-native Go engineer: the Velocity rules as standing context, the vel-gen and vel-test skills, and the arrow MCP server for live app introspection and the framework knowledge base.",
+  "author": {
+    "name": "Ali Raza",
+    "email": "ali@velocitykode.com"
+  },
+  "homepage": "https://vel.build/docs/ecosystem/velocity-arrow",
+  "repository": "https://github.com/velocitykode/velocity-arrow",
+  "license": "MIT",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json",
+      "interface": {
+        "displayName": "Velocity Arrow",
+        "shortDescription": "Velocity rules, skills and live app context",
+        "longDescription": "Makes your coding agent a Velocity-native Go engineer: the Velocity rules as standing context, the vel-gen and vel-test skills, and the arrow MCP server for live app introspection and the framework knowledge base.",
+        "developerName": "VelocityKode",
+        "category": "Coding",
+        "capabilities": [
+          "Read"
+        ],
+        "websiteURL": "https://vel.build/docs/ecosystem/velocity-arrow",
+        "defaultPrompt": [
+          "Use Arrow to list this app's routes and database schema."
+        ]
+      }
+    }
+  }
+}

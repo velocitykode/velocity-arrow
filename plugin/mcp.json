@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "velocity-arrow": {
+      "command": "arrow",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
