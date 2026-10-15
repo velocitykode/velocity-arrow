@@ -26,35 +26,35 @@ This puts `arrow` in `$(go env GOPATH)/bin`; make sure that directory is on
 your `PATH`. Run the same command again to update. Nothing is added to the app
 itself: no import, no module to register.
 
-For Claude Code, Codex and Cursor, `plugin/` in this repository is a thin
-bundle that does one thing: register `arrow mcp`. Any other MCP client
-registers it by hand.
+Then register `arrow mcp` as an MCP server. Start your agent from the app's
+root: that working directory is how arrow finds the app.
 
 ### Claude Code
 
 ```bash
-claude plugin marketplace add velocitykode/velocity-arrow
-claude plugin install arrow@velocitykode
+claude mcp add velocity-arrow -- arrow mcp
 ```
 
 ### Codex
 
 ```bash
-codex plugin marketplace add velocitykode/velocity-arrow
-codex plugin add arrow@velocitykode
-```
-
-Turn the plugin off for one project in `.codex/config.toml`:
-
-```toml
-[plugins."arrow@velocitykode"]
-enabled = false
+codex mcp add velocity-arrow -- arrow mcp
 ```
 
 ### Cursor
 
-Open **Customize**, choose **Import from Repo** and give it
-`https://github.com/velocitykode/velocity-arrow`.
+In `.cursor/mcp.json` at the project root:
+
+```json
+{
+  "mcpServers": {
+    "velocity-arrow": {
+      "command": "arrow",
+      "args": ["mcp"]
+    }
+  }
+}
+```
 
 ### opencode
 
@@ -72,11 +72,10 @@ In `opencode.json` at the project root:
 }
 ```
 
-### Any other agent (pi included)
+### Any other agent
 
-The tools are served over [MCP](https://modelcontextprotocol.io), so any MCP
-client can use them. Register `arrow mcp` with the project as its working
-directory:
+Any [MCP](https://modelcontextprotocol.io) client can use the tools. Register
+`arrow mcp` with the project as its working directory:
 
 ```json
 {
