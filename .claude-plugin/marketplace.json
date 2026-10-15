@@ -9,7 +9,7 @@
     {
       "name": "arrow",
       "source": "./plugin",
-      "description": "Velocity-native rules, skills and the arrow MCP server."
+      "description": "Velocity knowledge base and live app context, over MCP."
     }
   ]
 }

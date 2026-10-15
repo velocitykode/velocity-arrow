@@ -1,12 +1,12 @@
 {
   "name": "arrow",
-  "description": "Makes your coding agent a Velocity-native Go engineer: the Velocity rules as standing context, the vel-gen and vel-test skills, and the arrow MCP server for live app introspection and the framework knowledge base.",
+  "description": "The arrow MCP server: the Velocity framework knowledge base and live context for the app in front of your agent (routes, config, database schema, logs).",
   "version": "0.1.0",
   "author": {
     "name": "Ali Raza",
     "email": "ali@velocitykode.com"
   },
-  "homepage": "https://vel.build/docs/ecosystem/velocity-arrow",
+  "homepage": "https://vel.build/docs/ai/arrow",
   "repository": "https://github.com/velocitykode/velocity-arrow",
   "license": "MIT",
   "mcpServers": "./mcp.json"

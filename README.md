@@ -1,26 +1,22 @@
 # Velocity Arrow
 
-**Arrow makes your AI coding agent a Velocity engineer.** It is the AI layer of
-the Velocity framework: installed once, it gives agents like Claude Code,
-Codex, Cursor and pi three things they do not have on their own.
+**Arrow gives your AI coding agent the context of a Velocity app.** It is one
+MCP server with two things agents do not have on their own:
 
-- **Rules.** How Velocity code is written: introspect before guessing, use the
-  framework's helpers, scaffold with the generator first.
-- **Skills.** Step-by-step procedures the agent loads when the task calls for
-  them: `vel-gen` and `vel-test`.
-- **Live context.** Tools that read the app in front of it: the real routes,
-  the resolved config, the database schema, the latest logs, the docs and the
-  exact framework API for the version the app pins.
+- **The knowledge base.** The exact framework API, guard rules and docs for the
+  Velocity version the app pins.
+- **App context.** Tools that read the app in front of the agent: the real
+  routes, the resolved config, the database schema and the latest logs.
 
 Instead of guessing from stale training data, the agent works from your app as
 it is and from Velocity as it is at your version.
 
-Arrow informs; it does not enforce. Nothing blocks an edit or a command. Database
-access is read-only.
+Arrow is only that: no rules, no skills, no hooks, nothing injected into the
+agent's prompt. It informs; it does not enforce. Database access is read-only.
 
 ## Install
 
-Two steps: the `arrow` binary, then the plugin for your agent.
+Two steps: the `arrow` binary, then register the MCP server with your agent.
 
 ```bash
 go install github.com/velocitykode/velocity-arrow/cmd/arrow@latest
@@ -30,9 +26,9 @@ This puts `arrow` in `$(go env GOPATH)/bin`; make sure that directory is on
 your `PATH`. Run the same command again to update. Nothing is added to the app
 itself: no import, no module to register.
 
-The plugin is one bundle (`plugin/` in this repository) for every agent. Without
-`arrow` on `PATH` the rules and skills still load, the tools do not, and the
-agent tells you to install it.
+For Claude Code, Codex and Cursor, `plugin/` in this repository is a thin
+bundle that does one thing: register `arrow mcp`. Any other MCP client
+registers it by hand.
 
 ### Claude Code
 
@@ -60,21 +56,9 @@ enabled = false
 Open **Customize**, choose **Import from Repo** and give it
 `https://github.com/velocitykode/velocity-arrow`.
 
-### pi
-
-```bash
-pi install git:github.com/velocitykode/velocity-arrow
-```
-
-The tools need pi 1.0 or later; on an older pi the rules and skills still load
-and a notice says to update.
-
 ### opencode
 
-opencode has no bundle to install, so wire the three parts by hand. The skills
-and the rules are the same files the plugin ships.
-
-**Tools**, in `opencode.json` at the project root:
+In `opencode.json` at the project root:
 
 ```json
 {
@@ -88,22 +72,7 @@ and the rules are the same files the plugin ships.
 }
 ```
 
-**Skills**, into the shared `~/.agents/skills/` directory:
-
-```bash
-git clone https://github.com/velocitykode/velocity-arrow /tmp/velocity-arrow
-mkdir -p ~/.agents/skills
-cp -R /tmp/velocity-arrow/plugin/skills/* ~/.agents/skills/
-```
-
-**Rules**, appended to `AGENTS.md` in the project root without their
-frontmatter:
-
-```bash
-awk 'f>=2; /^---$/ {f++}' /tmp/velocity-arrow/plugin/rules/velocity.mdc >> AGENTS.md
-```
-
-### Any other agent
+### Any other agent (pi included)
 
 The tools are served over [MCP](https://modelcontextprotocol.io), so any MCP
 client can use them. Register `arrow mcp` with the project as its working
@@ -121,27 +90,7 @@ directory:
 }
 ```
 
-This gives the tools only. Add the rules by copying `plugin/rules/velocity.mdc`
-into the agent's instructions file.
-
-## What the agent can do
-
-### Rules
-
-One file, `plugin/rules/velocity.mdc`, present in every session. It tells the
-agent to check the app and the knowledge base before writing, to prefer
-Velocity's helpers over the standard library, to scaffold with the generator,
-to build and test after an edit, and to say so when it departs from what you
-asked for.
-
-### Skills
-
-| Skill | Use |
-|-------|-----|
-| `vel-gen` | scaffold a model, migration, handler, job and the rest with the generator before writing a file by hand |
-| `vel-test` | write integration tests the way Velocity apps are tested |
-
-### Tools
+## Tools
 
 | Tool | Reads | From |
 |------|-------|------|
@@ -209,7 +158,7 @@ serves it.
 
 ## Documentation
 
-[vel.build/docs/ecosystem/velocity-arrow](https://vel.build/docs/ecosystem/velocity-arrow)
+[vel.build/docs/ai/arrow](https://vel.build/docs/ai/arrow)
 
 ## License
 
